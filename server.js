@@ -51,32 +51,44 @@ app.get('/api/members', async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch member count', message: error.message });
     }
 });
+
+// Reviews endpoint (restored, fixed)
+app.get('/api/reviews', async (req, res) => {
+    try {
+        const offset = parseInt(req.query.offset) || 0;
+        const limit = parseInt(req.query.limit) || 6;
+        console.log(`Fetching reviews from Discord... offset: ${offset}, limit: ${limit}`);
+        const response = await fetch(`https://discord.com/api/v10/channels/${CHANNEL_ID}/messages?limit=100`, {
+            headers: {
+                'Authorization': `Bot ${BOT_TOKEN}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        if (!response.ok) {
+            throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
+        }
+        const messages = await response.json();
+        console.log(`Fetched ${messages.length} messages`);
+        // Parse messages in the format: first line = review, second line = rating
+        const allValidReviews = messages
             .filter(msg => {
                 if (!msg.content || msg.author.bot) {
                     console.log('Filtered out:', msg.author.bot ? 'bot message' : 'no content');
                     return false;
                 }
                 const lines = msg.content.trim().split('\n');
-                console.log('Message content:', JSON.stringify(msg.content));
-                console.log('Lines after split:', lines);
-                console.log('Lines length:', lines.length);
-                console.log('Second line contains /5:', lines.length >= 2 ? lines[1].includes('/5') : false);
                 return lines.length >= 2 && lines[1].includes('/5');
             })
             .map(msg => {
                 const lines = msg.content.trim().split('\n');
                 const reviewText = lines[0];
                 const ratingLine = lines[1];
-                
                 // Extract rating (e.g., "4/5" -> 4, "0/5" -> 0)
                 const ratingMatch = ratingLine.match(/(\d+)\/5/);
                 const rating = ratingMatch ? parseInt(ratingMatch[1]) : null;
-                
-                // Skip if rating is negative or invalid
                 if (rating === null || rating < 0) {
                     return null;
                 }
-                
                 return {
                     id: msg.id,
                     author: {
@@ -86,28 +98,25 @@ app.get('/api/members', async (req, res) => {
                             `https://cdn.discordapp.com/embed/avatars/${msg.author.discriminator % 5}.png`
                     },
                     content: reviewText,
-                    rating: Math.min(rating, 5), // Allow 0-5, cap at 5
+                    rating: Math.min(rating, 5),
                     timestamp: msg.timestamp
                 };
             })
-            .filter(review => review !== null) // Remove invalid ratings
-            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); // Sort by newest first
-        
+            .filter(review => review !== null)
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
         const totalReviews = allValidReviews.length;
         const paginatedReviews = allValidReviews.slice(offset, offset + limit);
-        
         console.log(`Parsed ${totalReviews} valid reviews, returning ${paginatedReviews.length} (offset: ${offset})`);
         res.json({
             reviews: paginatedReviews,
             totalCount: totalReviews,
             hasMore: offset + limit < totalReviews
         });
-        
     } catch (error) {
         console.error('Error fetching Discord messages:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             error: 'Failed to fetch reviews',
-            message: error.message 
+            message: error.message
         });
     }
 });
