@@ -176,7 +176,7 @@ app.get('/api/configs', async (req, res) => {
     }
 });
 
-// Serve static files (HTML, CSS, JS)
+// Serve static files (HTML, CSS, JS) AFTER all API routes
 app.use(express.static('.'));
 
 const PORT = process.env.PORT || 3000;
