@@ -50,15 +50,12 @@ app.get('/api/members', async (req, res) => {
         console.log(`API URL: ${url}`);
         
         console.log('Making request with token:', BOT_TOKEN ? `${BOT_TOKEN.slice(0,5)}...` : 'NO TOKEN');
-        const response = await fetch(url, {
+        const response = await fetch(`${url}?with_counts=true`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bot ${BOT_TOKEN}`,
                 'Content-Type': 'application/json',
-                'User-Agent': 'DiscordBot (https://github.com/discord/discord-example-app, 1.0.0)'
-            },
-            query: {
-                'with_counts': 'true'
+                'User-Agent': 'DiscordBot (https://nemesis-backend-yv3w.onrender.com, 1.0.0)'
             }
         });
 
