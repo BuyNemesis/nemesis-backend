@@ -35,20 +35,42 @@ app.get('/api/members', async (req, res) => {
     try {
         const GUILD_ID = process.env.GUILD_ID || '1424944847604678668';
         const url = `https://discord.com/api/v10/guilds/${GUILD_ID}?with_counts=true`;
+        
+        console.log(`Fetching member count for guild ${GUILD_ID}...`);
         const response = await fetch(url, {
             headers: {
                 'Authorization': `Bot ${BOT_TOKEN}`,
                 'Content-Type': 'application/json'
             }
         });
+
         const data = await response.json();
+        console.log('Discord API Response:', data);
+
+        if (!response.ok) {
+            throw new Error(`Discord API Error (${response.status}): ${JSON.stringify(data)}`);
+        }
+
+        if (!data.member_count && !data.approximate_member_count) {
+            console.warn('Warning: No member count found in Discord response:', data);
+        }
+
         // Prefer member_count if available, fallback to approximate_member_count
         const count = data.member_count || data.approximate_member_count || 0;
         console.log(`[MEMBER COUNT] Current server members: ${count}`);
-        res.json({ count });
+        
+        res.json({ 
+            count,
+            guild_id: GUILD_ID,
+            approximate: !data.member_count && !!data.approximate_member_count
+        });
     } catch (error) {
         console.error('Error fetching member count:', error);
-        res.status(500).json({ error: 'Failed to fetch member count', message: error.message });
+        res.status(500).json({ 
+            error: 'Failed to fetch member count', 
+            message: error.message,
+            guild_id: process.env.GUILD_ID || '1424944847604678668'
+        });
     }
 });
 
