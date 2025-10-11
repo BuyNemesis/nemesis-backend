@@ -42,7 +42,7 @@ console.log('🔒 Token is secure and hidden');
 app.get('/api/members', async (req, res) => {
     try {
         const GUILD_ID = process.env.GUILD_ID || '1426384773131010070'; // Updated server ID
-        const url = `https://discord.com/api/v10/guilds/${GUILD_ID}?with_counts=true`;
+        const url = `https://discord.com/api/v10/guilds/${GUILD_ID}`;
         
         console.log('🔍 Debug Info:');
         console.log(`Guild ID: ${GUILD_ID}`);
@@ -51,9 +51,14 @@ app.get('/api/members', async (req, res) => {
         
         console.log('Making request with token:', BOT_TOKEN ? `${BOT_TOKEN.slice(0,5)}...` : 'NO TOKEN');
         const response = await fetch(url, {
+            method: 'GET',
             headers: {
                 'Authorization': `Bot ${BOT_TOKEN}`,
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'User-Agent': 'DiscordBot (https://github.com/discord/discord-example-app, 1.0.0)'
+            },
+            query: {
+                'with_counts': 'true'
             }
         });
 
