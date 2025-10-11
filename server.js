@@ -11,7 +11,7 @@ app.use(express.json());
 
 // Use environment variables for sensitive data (secure for deployment)
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const CHANNEL_ID = process.env.CHANNEL_ID || '1424944848187953174';
+const CHANNEL_ID = process.env.CHANNEL_ID || '1426388568632328333';
 
 // Validate required environment variables
 if (!BOT_TOKEN) {
@@ -128,3 +128,4 @@ app.listen(PORT, () => {
     console.log(`🌐 Website: http://localhost:${PORT}/`);
     console.log('🔒 Bot token loaded securely from environment variables');
 });
+
