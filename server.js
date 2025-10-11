@@ -42,9 +42,9 @@ app.get('/api/members', async (req, res) => {
             }
         });
         const data = await response.json();
-        console.log('Discord guild API response:', data);
         // Prefer member_count if available, fallback to approximate_member_count
         const count = data.member_count || data.approximate_member_count || 0;
+        console.log(`[MEMBER COUNT] Current server members: ${count}`);
         res.json({ count });
     } catch (error) {
         console.error('Error fetching member count:', error);
