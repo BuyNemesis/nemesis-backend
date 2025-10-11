@@ -137,13 +137,16 @@ app.get('/health', (req, res) => {
                     throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
                 }
                 const messages = await response.json();
+                console.log('Fetched messages:', JSON.stringify(messages, null, 2));
                 if (!Array.isArray(messages) || messages.length === 0) {
                     break;
                 }
                 for (const msg of messages) {
                     if (msg.attachments && Array.isArray(msg.attachments)) {
+                        console.log('Message ID:', msg.id, 'Attachments:', msg.attachments);
                         for (const att of msg.attachments) {
                             if (att.filename && att.filename.toLowerCase().endsWith('.ini')) {
+                                console.log('Found .ini file:', att.filename);
                                 iniCount++;
                             }
                         }
