@@ -1,3 +1,24 @@
+// Endpoint to get Discord server member count
+app.get('/api/members', async (req, res) => {
+    try {
+        const GUILD_ID = process.env.GUILD_ID || '1424944847604678668'; // Replace with your actual server ID if needed
+        const url = `https://discord.com/api/v10/guilds/${GUILD_ID}?with_counts=true`;
+        const response = await fetch(url, {
+            headers: {
+                'Authorization': `Bot ${BOT_TOKEN}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        if (!response.ok) {
+            throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
+        }
+        const data = await response.json();
+        res.json({ count: data.approximate_member_count || 0 });
+    } catch (error) {
+        console.error('Error fetching member count:', error);
+        res.status(500).json({ error: 'Failed to fetch member count', message: error.message });
+    }
+});
 // Load environment variables (for local development)
 require('dotenv').config();
 
