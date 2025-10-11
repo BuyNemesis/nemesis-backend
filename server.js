@@ -49,6 +49,7 @@ app.get('/api/members', async (req, res) => {
         console.log(`Bot Token Present: ${!!BOT_TOKEN}`);
         console.log(`API URL: ${url}`);
         
+        console.log('Making request with token:', BOT_TOKEN ? `${BOT_TOKEN.slice(0,5)}...` : 'NO TOKEN');
         const response = await fetch(url, {
             headers: {
                 'Authorization': `Bot ${BOT_TOKEN}`,
@@ -57,6 +58,8 @@ app.get('/api/members', async (req, res) => {
         });
 
         const data = await response.json();
+        console.log('Response status:', response.status);
+        console.log('Response headers:', response.headers);
         console.log('Discord API Response:', data);
 
         if (!response.ok) {
