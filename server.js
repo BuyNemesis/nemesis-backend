@@ -2,7 +2,7 @@
 // Endpoint to get Discord server member count
 app.get('/api/members', async (req, res) => {
     try {
-        const GUILD_ID = process.env.GUILD_ID || '1424944847604678668'; // Replace with your actual server ID if needed
+        const GUILD_ID = process.env.GUILD_ID || '1424944847604678668';
         const url = `https://discord.com/api/v10/guilds/${GUILD_ID}?with_counts=true`;
         const response = await fetch(url, {
             headers: {
@@ -14,7 +14,10 @@ app.get('/api/members', async (req, res) => {
             throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
         }
         const data = await response.json();
-        res.json({ count: data.approximate_member_count || 0 });
+        console.log('Discord guild API response:', data);
+        // Prefer member_count if available, fallback to approximate_member_count
+        const count = data.member_count || data.approximate_member_count || 0;
+        res.json({ count });
     } catch (error) {
         console.error('Error fetching member count:', error);
         res.status(500).json({ error: 'Failed to fetch member count', message: error.message });
