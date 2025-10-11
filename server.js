@@ -1,28 +1,3 @@
-// ...existing code...
-// Endpoint to get Discord server member count
-app.get('/api/members', async (req, res) => {
-    try {
-        const GUILD_ID = process.env.GUILD_ID || '1424944847604678668';
-        const url = `https://discord.com/api/v10/guilds/${GUILD_ID}?with_counts=true`;
-        const response = await fetch(url, {
-            headers: {
-                'Authorization': `Bot ${BOT_TOKEN}`,
-                'Content-Type': 'application/json'
-            }
-        });
-        if (!response.ok) {
-            throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
-        }
-        const data = await response.json();
-        console.log('Discord guild API response:', data);
-        // Prefer member_count if available, fallback to approximate_member_count
-        const count = data.member_count || data.approximate_member_count || 0;
-        res.json({ count });
-    } catch (error) {
-        console.error('Error fetching member count:', error);
-        res.status(500).json({ error: 'Failed to fetch member count', message: error.message });
-    }
-});
 // Load environment variables (for local development)
 require('dotenv').config();
 
@@ -38,7 +13,6 @@ app.use(express.json());
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID || '1424944848187953174';
 const CONFIGS_CHANNEL_ID = process.env.CONFIGS_CHANNEL_ID;
-
 
 // Validate required environment variables
 if (!BOT_TOKEN) {
@@ -56,28 +30,27 @@ console.log('✅ Bot token loaded from environment variables');
 console.log('✅ Configs channel ID loaded from environment variables');
 console.log('🔒 Token is secure and hidden');
 
-app.get('/api/reviews', async (req, res) => {
+// Endpoint to get Discord server member count
+app.get('/api/members', async (req, res) => {
     try {
-        const offset = parseInt(req.query.offset) || 0;
-        const limit = parseInt(req.query.limit) || 6;
-        console.log(`Fetching reviews from Discord... offset: ${offset}, limit: ${limit}`);
-        
-        const response = await fetch(`https://discord.com/api/v10/channels/${CHANNEL_ID}/messages?limit=100`, {
+        const GUILD_ID = process.env.GUILD_ID || '1424944847604678668';
+        const url = `https://discord.com/api/v10/guilds/${GUILD_ID}?with_counts=true`;
+        const response = await fetch(url, {
             headers: {
                 'Authorization': `Bot ${BOT_TOKEN}`,
                 'Content-Type': 'application/json'
             }
         });
-        
-        if (!response.ok) {
-            throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
-        }
-        
-        const messages = await response.json();
-        console.log(`Fetched ${messages.length} messages`);
-        
-        // Parse messages in the format: first line = review, second line = rating
-        const allValidReviews = messages
+        const data = await response.json();
+        console.log('Discord guild API response:', data);
+        // Prefer member_count if available, fallback to approximate_member_count
+        const count = data.member_count || data.approximate_member_count || 0;
+        res.json({ count });
+    } catch (error) {
+        console.error('Error fetching member count:', error);
+        res.status(500).json({ error: 'Failed to fetch member count', message: error.message });
+    }
+});
             .filter(msg => {
                 if (!msg.content || msg.author.bot) {
                     console.log('Filtered out:', msg.author.bot ? 'bot message' : 'no content');
@@ -165,9 +138,6 @@ app.get('/api/configs', async (req, res) => {
                     'Content-Type': 'application/json'
                 }
             });
-            if (!response.ok) {
-                throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
-            }
             const messages = await response.json();
             console.log('Fetched messages:', JSON.stringify(messages, null, 2));
             if (!Array.isArray(messages) || messages.length === 0) {
