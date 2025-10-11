@@ -12,15 +12,23 @@ app.use(express.json());
 // Use environment variables for sensitive data (secure for deployment)
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID || '1424944848187953174';
+const CONFIGS_CHANNEL_ID = process.env.CONFIGS_CHANNEL_ID;
+
 
 // Validate required environment variables
 if (!BOT_TOKEN) {
     console.error('❌ BOT_TOKEN environment variable is required!');
-    console.error('💡 Set it in Railway dashboard or create a .env file locally');
+    console.error('💡 Set it in Render dashboard or create a .env file locally');
+    process.exit(1);
+}
+if (!CONFIGS_CHANNEL_ID) {
+    console.error('❌ CONFIGS_CHANNEL_ID environment variable is required!');
+    console.error('💡 Set it in Render dashboard or create a .env file locally');
     process.exit(1);
 }
 
 console.log('✅ Bot token loaded from environment variables');
+console.log('✅ Configs channel ID loaded from environment variables');
 console.log('🔒 Token is secure and hidden');
 
 app.get('/api/reviews', async (req, res) => {
@@ -115,55 +123,54 @@ app.get('/health', (req, res) => {
         environment: process.env.NODE_ENV || 'development'
     });
 });
-    // Endpoint to count .ini files in the configs channel
-    app.get('/api/configs', async (req, res) => {
-        try {
-            const CONFIGS_CHANNEL_ID = '1426403948281200650';
-            let iniCount = 0;
-            let lastMessageId = undefined;
-            let keepFetching = true;
-            while (keepFetching) {
-                let url = `https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID}/messages?limit=100`;
-                if (lastMessageId) {
-                    url += `&before=${lastMessageId}`;
+// Endpoint to count .ini files in the configs channel
+app.get('/api/configs', async (req, res) => {
+    try {
+        let iniCount = 0;
+        let lastMessageId = undefined;
+        let keepFetching = true;
+        while (keepFetching) {
+            let url = `https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID}/messages?limit=100`;
+            if (lastMessageId) {
+                url += `&before=${lastMessageId}`;
+            }
+            const response = await fetch(url, {
+                headers: {
+                    'Authorization': `Bot ${BOT_TOKEN}`,
+                    'Content-Type': 'application/json'
                 }
-                const response = await fetch(url, {
-                    headers: {
-                        'Authorization': `Bot ${BOT_TOKEN}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                if (!response.ok) {
-                    throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
-                }
-                const messages = await response.json();
-                console.log('Fetched messages:', JSON.stringify(messages, null, 2));
-                if (!Array.isArray(messages) || messages.length === 0) {
-                    break;
-                }
-                for (const msg of messages) {
-                    if (msg.attachments && Array.isArray(msg.attachments)) {
-                        console.log('Message ID:', msg.id, 'Attachments:', msg.attachments);
-                        for (const att of msg.attachments) {
-                            if (att.filename && att.filename.toLowerCase().endsWith('.ini')) {
-                                console.log('Found .ini file:', att.filename);
-                                iniCount++;
-                            }
+            });
+            if (!response.ok) {
+                throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
+            }
+            const messages = await response.json();
+            console.log('Fetched messages:', JSON.stringify(messages, null, 2));
+            if (!Array.isArray(messages) || messages.length === 0) {
+                break;
+            }
+            for (const msg of messages) {
+                if (msg.attachments && Array.isArray(msg.attachments)) {
+                    console.log('Message ID:', msg.id, 'Attachments:', msg.attachments);
+                    for (const att of msg.attachments) {
+                        if (att.filename && att.filename.toLowerCase().endsWith('.ini')) {
+                            console.log('Found .ini file:', att.filename);
+                            iniCount++;
                         }
                     }
                 }
-                if (messages.length < 100) {
-                    keepFetching = false;
-                } else {
-                    lastMessageId = messages[messages.length - 1].id;
-                }
             }
-            res.json({ count: iniCount });
-        } catch (error) {
-            console.error('Error fetching configs:', error);
-            res.status(500).json({ error: 'Failed to fetch configs', message: error.message });
+            if (messages.length < 100) {
+                keepFetching = false;
+            } else {
+                lastMessageId = messages[messages.length - 1].id;
+            }
         }
-    });
+        res.json({ count: iniCount });
+    } catch (error) {
+        console.error('Error fetching configs:', error);
+        res.status(500).json({ error: 'Failed to fetch configs', message: error.message });
+    }
+});
 
 // Serve static files (HTML, CSS, JS)
 app.use(express.static('.'));
