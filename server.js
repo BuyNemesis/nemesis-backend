@@ -36,7 +36,11 @@ app.get('/api/members', async (req, res) => {
         const GUILD_ID = process.env.GUILD_ID || '1426384773131010070'; // Updated server ID
         const url = `https://discord.com/api/v10/guilds/${GUILD_ID}?with_counts=true`;
         
-        console.log(`Fetching member count for guild ${GUILD_ID}...`);
+        console.log('🔍 Debug Info:');
+        console.log(`Guild ID: ${GUILD_ID}`);
+        console.log(`Bot Token Present: ${!!BOT_TOKEN}`);
+        console.log(`API URL: ${url}`);
+        
         const response = await fetch(url, {
             headers: {
                 'Authorization': `Bot ${BOT_TOKEN}`,
@@ -65,11 +69,19 @@ app.get('/api/members', async (req, res) => {
             approximate: !data.member_count && !!data.approximate_member_count
         });
     } catch (error) {
+        console.error('❌ Error Details:');
         console.error('Error fetching member count:', error);
+        console.error('Stack trace:', error.stack);
+        console.error('Guild ID:', GUILD_ID);
+        console.error('Bot token length:', BOT_TOKEN ? BOT_TOKEN.length : 0);
+        
         res.status(500).json({ 
             error: 'Failed to fetch member count', 
             message: error.message,
-            guild_id: process.env.GUILD_ID || '1424944847604678668'
+            details: error.stack,
+            guild_id: GUILD_ID,
+            timestamp: new Date().toISOString(),
+            hasToken: !!BOT_TOKEN
         });
     }
 });
@@ -198,8 +210,25 @@ app.get('/api/configs', async (req, res) => {
     }
 });
 
+// Debug route to catch unhandled API requests
+app.use('/api/*', (req, res) => {
+    console.log('⚠️ Unhandled API request:', req.method, req.url);
+    res.status(404).json({
+        error: 'API endpoint not found',
+        method: req.method,
+        url: req.url,
+        timestamp: new Date().toISOString()
+    });
+});
+
 // Serve static files (HTML, CSS, JS) AFTER all API routes
 app.use(express.static('.'));
+
+// Debug route to log 404s
+app.use((req, res) => {
+    console.log('⚠️ 404 Not Found:', req.method, req.url);
+    res.status(404).send('404 Not Found');
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
