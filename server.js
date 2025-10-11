@@ -6,8 +6,16 @@ const cors = require('cors');
 const fetch = require('node-fetch');
 
 const app = express();
+
+// CORS middleware
 app.use(cors());
 app.use(express.json());
+
+// Request logging middleware
+app.use((req, res, next) => {
+    console.log(`📥 ${new Date().toISOString()} - ${req.method} ${req.url}`);
+    next();
+});
 
 // Use environment variables for sensitive data (secure for deployment)
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -210,6 +218,30 @@ app.get('/api/configs', async (req, res) => {
     }
 });
 
+// API route health checks
+app.get('/api/health', (req, res) => {
+    res.json({
+        status: 'OK',
+        api_routes: {
+            '/api/members': 'Active',
+            '/api/configs': 'Active',
+            '/api/reviews': 'Active'
+        },
+        bot_token: !!BOT_TOKEN,
+        guild_id: process.env.GUILD_ID || '1426384773131010070',
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Serve static files ONLY for non-API routes
+app.use((req, res, next) => {
+    if (req.path.startsWith('/api/')) {
+        next();
+    } else {
+        express.static('.')(req, res, next);
+    }
+});
+
 // Debug route to catch unhandled API requests
 app.use('/api/*', (req, res) => {
     console.log('⚠️ Unhandled API request:', req.method, req.url);
@@ -221,10 +253,7 @@ app.use('/api/*', (req, res) => {
     });
 });
 
-// Serve static files (HTML, CSS, JS) AFTER all API routes
-app.use(express.static('.'));
-
-// Debug route to log 404s
+// Final catch-all for 404s
 app.use((req, res) => {
     console.log('⚠️ 404 Not Found:', req.method, req.url);
     res.status(404).send('404 Not Found');
