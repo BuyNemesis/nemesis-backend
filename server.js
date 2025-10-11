@@ -33,7 +33,7 @@ console.log('🔒 Token is secure and hidden');
 // Endpoint to get Discord server member count
 app.get('/api/members', async (req, res) => {
     try {
-        const GUILD_ID = process.env.GUILD_ID || '1424944847604678668';
+        const GUILD_ID = process.env.GUILD_ID || '1426384773131010070'; // Updated server ID
         const url = `https://discord.com/api/v10/guilds/${GUILD_ID}?with_counts=true`;
         
         console.log(`Fetching member count for guild ${GUILD_ID}...`);
