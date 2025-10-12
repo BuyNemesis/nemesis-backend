@@ -310,16 +310,7 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-// Serve static files ONLY for non-API routes
-app.use((req, res, next) => {
-    if (req.path.startsWith('/api/')) {
-        next();
-    } else {
-        express.static('.')(req, res, next);
-    }
-});
-
-// Debug route to catch unhandled API requests
+// Debug route to catch unhandled API requests (must come AFTER all API routes)
 app.use('/api/*', (req, res) => {
     console.log('⚠️ Unhandled API request:', req.method, req.url);
     res.status(404).json({
@@ -329,6 +320,9 @@ app.use('/api/*', (req, res) => {
         timestamp: new Date().toISOString()
     });
 });
+
+// Serve static files for non-API routes
+app.use(express.static('.'));
 
 // Final catch-all for 404s
 app.use((req, res) => {
