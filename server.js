@@ -21,6 +21,7 @@ app.use((req, res, next) => {
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID || '1424944848187953174';
 const CONFIGS_CHANNEL_ID = process.env.CONFIGS_CHANNEL_ID;
+const BUYER_MEDIA_CHANNEL_ID = process.env.BUYER_MEDIA_CHANNEL_ID || '1426388792012705874';
 
 // Validate required environment variables
 if (!BOT_TOKEN) {
@@ -36,6 +37,7 @@ if (!CONFIGS_CHANNEL_ID) {
 
 console.log('✅ Bot token loaded from environment variables');
 console.log('✅ Configs channel ID loaded from environment variables');
+console.log('✅ Buyer media channel ID loaded from environment variables');
 console.log('🔒 Token is secure and hidden');
 
 // Endpoint to get Discord server member count
@@ -168,6 +170,74 @@ app.get('/api/reviews', async (req, res) => {
     }
 });
 
+// Media endpoint - fetch Streamable links from buyer media channel
+app.get('/api/media', async (req, res) => {
+    try {
+        const offset = parseInt(req.query.offset) || 0;
+        const limit = parseInt(req.query.limit) || 12;
+        
+        console.log(`Fetching media from Discord... offset: ${offset}, limit: ${limit}`);
+        
+        const response = await fetch(`https://discord.com/api/v10/channels/${BUYER_MEDIA_CHANNEL_ID}/messages?limit=100`, {
+            headers: {
+                'Authorization': `Bot ${BOT_TOKEN}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
+        }
+
+        const messages = await response.json();
+        console.log(`Fetched ${messages.length} messages from buyer media channel`);
+
+        // Extract Streamable links from messages
+        const streamableRegex = /streamable\.com\/([a-zA-Z0-9]+)/gi;
+        
+        const allVideos = messages
+            .filter(msg => !msg.author.bot && msg.content)
+            .map(msg => {
+                const matches = [...msg.content.matchAll(streamableRegex)];
+                
+                return matches.map(match => {
+                    const streamableId = match[1];
+                    // Try to extract title from message (first line before the link)
+                    const lines = msg.content.split('\n');
+                    const titleLine = lines.find(line => !line.includes('streamable.com'));
+                    
+                    return {
+                        streamableId: streamableId,
+                        title: titleLine?.trim() || 'Nemesis Gameplay',
+                        author: msg.author.username,
+                        date: msg.timestamp,
+                        messageId: msg.id
+                    };
+                });
+            })
+            .flat()
+            .filter(video => video !== null)
+            .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        const totalVideos = allVideos.length;
+        const paginatedVideos = allVideos.slice(offset, offset + limit);
+
+        console.log(`Found ${totalVideos} videos, returning ${paginatedVideos.length} (offset: ${offset})`);
+
+        res.json({
+            videos: paginatedVideos,
+            totalCount: totalVideos,
+            hasMore: offset + limit < totalVideos
+        });
+    } catch (error) {
+        console.error('Error fetching media from Discord:', error);
+        res.status(500).json({
+            error: 'Failed to fetch media',
+            message: error.message
+        });
+    }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.json({ 
@@ -230,10 +300,12 @@ app.get('/api/health', (req, res) => {
         api_routes: {
             '/api/members': 'Active',
             '/api/configs': 'Active',
-            '/api/reviews': 'Active'
+            '/api/reviews': 'Active',
+            '/api/media': 'Active'
         },
         bot_token: !!BOT_TOKEN,
         guild_id: process.env.GUILD_ID || '1426384773131010070',
+        buyer_media_channel_id: BUYER_MEDIA_CHANNEL_ID,
         timestamp: new Date().toISOString()
     });
 });
@@ -267,9 +339,11 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Discord Reviews API running on port ${PORT}`);
-    console.log(`📺 Channel ID: ${CHANNEL_ID}`);
+    console.log(`📺 Reviews Channel ID: ${CHANNEL_ID}`);
+    console.log(`🎬 Buyer Media Channel ID: ${BUYER_MEDIA_CHANNEL_ID}`);
     console.log(`🔍 Health check: http://localhost:${PORT}/health`);
     console.log(`📝 Reviews endpoint: http://localhost:${PORT}/api/reviews`);
+    console.log(`🎥 Media endpoint: http://localhost:${PORT}/api/media`);
     console.log(`🌐 Website: http://localhost:${PORT}/`);
     console.log('🔒 Bot token loaded securely from environment variables');
 });
