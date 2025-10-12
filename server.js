@@ -170,7 +170,7 @@ app.get('/api/reviews', async (req, res) => {
     }
 });
 
-// Media endpoint - fetch Streamable links from buyer media channel
+// Media endpoint - fetch MP4 attachments and Streamable links from buyer media channel
 app.get('/api/media', async (req, res) => {
     try {
         const offset = parseInt(req.query.offset) || 0;
@@ -192,37 +192,57 @@ app.get('/api/media', async (req, res) => {
         const messages = await response.json();
         console.log(`Fetched ${messages.length} messages from buyer media channel`);
 
-        // Extract Streamable links from messages
         const streamableRegex = /streamable\.com\/([a-zA-Z0-9]+)/gi;
         
-        const allVideos = messages
-            .filter(msg => !msg.author.bot && msg.content)
-            .map(msg => {
+        const allVideos = [];
+        
+        messages.forEach(msg => {
+            if (msg.author.bot) return;
+            
+            // Extract title from message content (first line)
+            const titleLine = msg.content ? msg.content.split('\n')[0].trim() : '';
+            const title = titleLine && !titleLine.includes('http') ? titleLine : 'Nemesis Gameplay';
+            
+            // Check for MP4 attachments (direct Discord CDN links)
+            if (msg.attachments && msg.attachments.length > 0) {
+                msg.attachments.forEach(attachment => {
+                    if (attachment.content_type?.startsWith('video/') || attachment.filename?.toLowerCase().endsWith('.mp4')) {
+                        allVideos.push({
+                            type: 'mp4',
+                            videoUrl: attachment.url, // Direct Discord CDN URL
+                            title: title,
+                            author: msg.author.username,
+                            date: msg.timestamp,
+                            messageId: msg.id,
+                            thumbnail: attachment.proxy_url || attachment.url
+                        });
+                    }
+                });
+            }
+            
+            // Also check for Streamable links in message content
+            if (msg.content) {
                 const matches = [...msg.content.matchAll(streamableRegex)];
-                
-                return matches.map(match => {
-                    const streamableId = match[1];
-                    // Try to extract title from message (first line before the link)
-                    const lines = msg.content.split('\n');
-                    const titleLine = lines.find(line => !line.includes('streamable.com'));
-                    
-                    return {
-                        streamableId: streamableId,
-                        title: titleLine?.trim() || 'Nemesis Gameplay',
+                matches.forEach(match => {
+                    allVideos.push({
+                        type: 'streamable',
+                        streamableId: match[1],
+                        title: title,
                         author: msg.author.username,
                         date: msg.timestamp,
                         messageId: msg.id
-                    };
+                    });
                 });
-            })
-            .flat()
-            .filter(video => video !== null)
-            .sort((a, b) => new Date(b.date) - new Date(a.date));
+            }
+        });
+        
+        // Sort by date (newest first)
+        allVideos.sort((a, b) => new Date(b.date) - new Date(a.date));
 
         const totalVideos = allVideos.length;
         const paginatedVideos = allVideos.slice(offset, offset + limit);
 
-        console.log(`Found ${totalVideos} videos, returning ${paginatedVideos.length} (offset: ${offset})`);
+        console.log(`Found ${totalVideos} videos (MP4s + Streamable), returning ${paginatedVideos.length} (offset: ${offset})`);
 
         res.json({
             videos: paginatedVideos,
