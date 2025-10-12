@@ -294,6 +294,52 @@ app.get('/api/media', async (req, res) => {
     }
 });
 
+// Patchnotes endpoint - read plaintext patchnotes from the development channel
+app.get('/api/patchnotes', async (req, res) => {
+    try {
+        const DEV_CHANNEL = process.env.DEVELOPMENT_CHANNEL || process.env.DEVELOPMENT_CHANNEL_ID || process.env.DEVELOPMENT_CHANNEL_ID || '1426388284501659678';
+        console.log(`Fetching patchnotes from channel ${DEV_CHANNEL}`);
+
+        const response = await fetch(`https://discord.com/api/v10/channels/${DEV_CHANNEL}/messages?limit=50`, {
+            headers: {
+                'Authorization': `Bot ${BOT_TOKEN}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            const txt = await response.text();
+            console.error('Discord API error while fetching patchnotes:', response.status, txt);
+            return res.status(502).json({ error: 'Discord API error', status: response.status, details: txt });
+        }
+
+        const messages = await response.json();
+
+        // Parse messages into notes; expected format (per message):
+        // Line 1: date (e.g. 10/12/2025)
+        // Line 2: version (e.g. v1.0.0)
+        // Line 3: title/summary
+        // Line 4+: details
+        const notes = [];
+        for (const msg of messages) {
+            if (!msg.content || msg.author?.bot) continue;
+            const lines = msg.content.replace(/\r/g, '').split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            if (lines.length < 3) continue;
+            const date = lines[0];
+            const version = lines[1];
+            const title = lines[2];
+            const details = lines.slice(3).map(l => l.replace(/^[-*\u2022]\s?/, '').trim()).filter(Boolean);
+            notes.push({ date, version, title, details, discordId: msg.id, ts: msg.timestamp });
+        }
+
+        notes.sort((a, b) => new Date(b.ts) - new Date(a.ts));
+        res.json({ notes });
+    } catch (error) {
+        console.error('Error in /api/patchnotes:', error);
+        res.status(500).json({ error: 'Failed to fetch patchnotes', message: error.message });
+    }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.json({ 
