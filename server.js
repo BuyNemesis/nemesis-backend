@@ -195,6 +195,7 @@ app.get('/api/media', async (req, res) => {
         const streamableRegex = /streamable\.com\/([a-zA-Z0-9]+)/gi;
         
         const allVideos = [];
+    const allPhotos = [];
         
         messages.forEach(msg => {
             if (msg.author.bot) return;
@@ -206,10 +207,24 @@ app.get('/api/media', async (req, res) => {
             // Check for MP4 attachments (direct Discord CDN links)
             if (msg.attachments && msg.attachments.length > 0) {
                 msg.attachments.forEach(attachment => {
-                    if (attachment.content_type?.startsWith('video/') || attachment.filename?.toLowerCase().endsWith('.mp4')) {
+                    const fname = (attachment.filename || '').toLowerCase();
+                    const ctype = (attachment.content_type || '').toLowerCase();
+                    // Video attachments
+                    if (ctype.startsWith('video/') || fname.endsWith('.mp4')) {
                         allVideos.push({
                             type: 'mp4',
                             videoUrl: attachment.url, // Direct Discord CDN URL
+                            title: title,
+                            author: msg.author.username,
+                            date: msg.timestamp,
+                            messageId: msg.id,
+                            thumbnail: attachment.proxy_url || attachment.url
+                        });
+                    }
+                    // Image attachments (photos/screenshots)
+                    else if (ctype.startsWith('image/') || fname.match(/\.(png|jpe?g|webp|gif)$/)) {
+                        allPhotos.push({
+                            imageUrl: attachment.url,
                             title: title,
                             author: msg.author.username,
                             date: msg.timestamp,
@@ -233,21 +248,42 @@ app.get('/api/media', async (req, res) => {
                         messageId: msg.id
                     });
                 });
+
+                // Check for inline image links (discord CDN or direct image URLs)
+                const imageUrlRegex = /(https?:\/\/(?:cdn\.discordapp\.com|media\.discordapp\.net|i\.imgur\.com|i\.redd\.it|pbs\.twimg\.com)[^\s)]+\.(?:png|jpe?g|webp|gif))/gi;
+                const imageMatches = [...msg.content.matchAll(imageUrlRegex)];
+                imageMatches.forEach(m => {
+                    allPhotos.push({
+                        imageUrl: m[1],
+                        title: title,
+                        author: msg.author.username,
+                        date: msg.timestamp,
+                        messageId: msg.id,
+                        thumbnail: m[1]
+                    });
+                });
             }
         });
         
         // Sort by date (newest first)
         allVideos.sort((a, b) => new Date(b.date) - new Date(a.date));
+        allPhotos.sort((a, b) => new Date(b.date) - new Date(a.date));
 
         const totalVideos = allVideos.length;
-        const paginatedVideos = allVideos.slice(offset, offset + limit);
+        const totalPhotos = allPhotos.length;
 
-        console.log(`Found ${totalVideos} videos (MP4s + Streamable), returning ${paginatedVideos.length} (offset: ${offset})`);
+        const paginatedVideos = allVideos.slice(offset, offset + limit);
+        const paginatedPhotos = allPhotos.slice(offset, offset + limit);
+
+        console.log(`Found ${totalVideos} videos and ${totalPhotos} photos; returning ${paginatedVideos.length} videos and ${paginatedPhotos.length} photos (offset: ${offset})`);
 
         res.json({
             videos: paginatedVideos,
-            totalCount: totalVideos,
-            hasMore: offset + limit < totalVideos
+            photos: paginatedPhotos,
+            totalVideos,
+            totalPhotos,
+            hasMoreVideos: offset + limit < totalVideos,
+            hasMorePhotos: offset + limit < totalPhotos
         });
     } catch (error) {
         console.error('Error fetching media from Discord:', error);
