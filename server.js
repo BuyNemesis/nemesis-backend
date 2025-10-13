@@ -329,7 +329,18 @@ app.get('/api/patchnotes', async (req, res) => {
             const version = lines[1];
             const title = lines[2];
             const details = lines.slice(3).map(l => l.replace(/^[-*\u2022]\s?/, '').trim()).filter(Boolean);
-            notes.push({ date, version, title, details, discordId: msg.id, ts: msg.timestamp });
+            // extract exact time from Discord message timestamp (ISO)
+            let time = '';
+            try {
+                if (msg.timestamp) {
+                    const d = new Date(msg.timestamp);
+                    // format as HH:MM:SSZ (UTC)
+                    time = d.toISOString().split('T')[1].split('.')[0] + 'Z';
+                }
+            } catch (e) {
+                time = '';
+            }
+            notes.push({ date, version, title, details, discordId: msg.id, ts: msg.timestamp, time });
         }
 
         notes.sort((a, b) => new Date(b.ts) - new Date(a.ts));
@@ -337,6 +348,66 @@ app.get('/api/patchnotes', async (req, res) => {
     } catch (error) {
         console.error('Error in /api/patchnotes:', error);
         res.status(500).json({ error: 'Failed to fetch patchnotes', message: error.message });
+    }
+});
+
+// Site visit tracking endpoint
+app.post('/api/visit', async (req, res) => {
+    try {
+        const WEBHOOK_URL = process.env.WEBHOOK;
+        const VISIT_CHANNEL = process.env.VISIT_CHANNEL || '1427089441817890896';
+        
+        if (!WEBHOOK_URL) {
+            console.error('❌ WEBHOOK environment variable is required for visit tracking!');
+            return res.status(500).json({ error: 'Webhook not configured' });
+        }
+        
+        const { page, userAgent, referrer } = req.body;
+        const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
+        
+        // Create Discord embed message
+        const embed = {
+            title: '🌐 Site Visit',
+            description: `Someone visited **${page || 'unknown page'}**`,
+            color: 0xE8BBF9, // Purple color matching site theme
+            fields: [
+                { name: 'Page', value: page || 'Unknown', inline: true },
+                { name: 'IP', value: ip.split(',')[0].trim(), inline: true },
+                { name: 'Time', value: new Date().toISOString(), inline: false }
+            ],
+            footer: { text: 'Nemesis Site Analytics' },
+            timestamp: new Date().toISOString()
+        };
+        
+        if (userAgent) {
+            embed.fields.push({ name: 'User Agent', value: userAgent.substring(0, 200), inline: false });
+        }
+        if (referrer && referrer !== 'unknown') {
+            embed.fields.push({ name: 'Referrer', value: referrer, inline: true });
+        }
+
+        const webhookPayload = {
+            username: 'Site Visits',
+            avatar_url: 'https://cdn.discordapp.com/emojis/🌐.png',
+            embeds: [embed]
+        };
+
+        const response = await fetch(WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(webhookPayload)
+        });
+
+        if (!response.ok) {
+            console.error('Discord webhook error:', response.status, await response.text());
+            return res.status(500).json({ error: 'Failed to send webhook' });
+        }
+
+        console.log(`📊 Visit logged: ${page} from ${ip}`);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error logging visit:', error);
+        res.status(500).json({ error: 'Failed to log visit' });
     }
 });
 
