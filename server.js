@@ -463,11 +463,6 @@ function getBrowserInfo(userAgent) {
     return '❓ Unknown Browser';
 }
 
-        if (!response.ok) {
-            console.error('Discord webhook error:', response.status, await response.text());
-            return res.status(500).json({ error: 'Failed to send webhook' });
-        }
-
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.json({ 
