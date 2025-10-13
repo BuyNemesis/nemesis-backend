@@ -297,10 +297,19 @@ app.get('/api/media', async (req, res) => {
 // Patchnotes endpoint - read plaintext patchnotes from the development channel
 app.get('/api/patchnotes', async (req, res) => {
     try {
-        const DEV_CHANNEL = process.env.DEVELOPMENT_CHANNEL || process.env.DEVELOPMENT_CHANNEL_ID || process.env.DEVELOPMENT_CHANNEL_ID || '1426388284501659678';
-        console.log(`Fetching patchnotes from channel ${DEV_CHANNEL}`);
+        const type = req.query.type || 'website'; // default to website
+        
+        // Different channels for different types of patch notes
+        let channelId;
+        if (type === 'cheat') {
+            channelId = process.env.CHEAT_DEVELOPMENT || '1426388284501659678'; // CHEAT_DEVELOPMENT channel
+        } else {
+            channelId = process.env.WEBSITE_DEVELOPMENT || '1427127741245030493'; // WEBSITE_DEVELOPMENT channel
+        }
+        
+        console.log(`Fetching ${type} patchnotes from channel ${channelId}`);
 
-        const response = await fetch(`https://discord.com/api/v10/channels/${DEV_CHANNEL}/messages?limit=50`, {
+        const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages?limit=50`, {
             headers: {
                 'Authorization': `Bot ${BOT_TOKEN}`,
                 'Content-Type': 'application/json'
@@ -344,7 +353,7 @@ app.get('/api/patchnotes', async (req, res) => {
         }
 
         notes.sort((a, b) => new Date(b.ts) - new Date(a.ts));
-        res.json({ notes });
+        res.json({ notes, type });
     } catch (error) {
         console.error('Error in /api/patchnotes:', error);
         res.status(500).json({ error: 'Failed to fetch patchnotes', message: error.message });
