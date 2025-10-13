@@ -362,33 +362,75 @@ app.post('/api/visit', async (req, res) => {
             return res.status(500).json({ error: 'Webhook not configured' });
         }
         
-        const { page, userAgent, referrer } = req.body;
-        const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
+        const { page, userAgent, referrer, location } = req.body;
         
-        // Create Discord embed message
+        // Helper function to get country flag emoji
+        function getCountryFlag(countryCode) {
+            if (!countryCode || countryCode === 'XX') return '🏳️';
+            return countryCode
+                .toUpperCase()
+                .replace(/./g, char => String.fromCodePoint(char.charCodeAt(0) + 127397));
+        }
+        
+        // Create location string with flag
+        const locationStr = location ? 
+            `${getCountryFlag(location.countryCode)} ${location.city}, ${location.region}, ${location.country}` : 
+            '🌍 Unknown Location';
+            
+        // Create beautiful Discord embed
         const embed = {
-            title: '🌐 Site Visit',
-            description: `Someone visited **${page || 'unknown page'}**`,
+            title: '🌐 New Site Visit',
+            description: `Someone just visited **${page || 'unknown page'}**`,
             color: 0xE8BBF9, // Purple color matching site theme
             fields: [
-                { name: 'Page', value: page || 'Unknown', inline: true },
-                { name: 'IP', value: ip.split(',')[0].trim(), inline: true },
-                { name: 'Time', value: new Date().toISOString(), inline: false }
+                { 
+                    name: '📄 Page Visited', 
+                    value: `\`${page || 'Unknown'}\``, 
+                    inline: true 
+                },
+                { 
+                    name: '📍 Location', 
+                    value: locationStr, 
+                    inline: true 
+                },
+                { 
+                    name: '🕒 Time', 
+                    value: `<t:${Math.floor(Date.now() / 1000)}:R>`, 
+                    inline: true 
+                }
             ],
-            footer: { text: 'Nemesis Site Analytics' },
-            timestamp: new Date().toISOString()
+            footer: { 
+                text: 'Nemesis Analytics • nemesis.cc',
+                icon_url: 'https://cdn.discordapp.com/attachments/1234567890/example.png' 
+            },
+            timestamp: new Date().toISOString(),
+            thumbnail: {
+                url: 'https://cdn.discordapp.com/emojis/🌐.png'
+            }
         };
         
-        if (userAgent) {
-            embed.fields.push({ name: 'User Agent', value: userAgent.substring(0, 200), inline: false });
+        // Add referrer if available
+        if (referrer && referrer !== 'direct' && referrer !== 'unknown') {
+            embed.fields.push({ 
+                name: '🔗 Referrer', 
+                value: `\`${referrer}\``, 
+                inline: false 
+            });
         }
-        if (referrer && referrer !== 'unknown') {
-            embed.fields.push({ name: 'Referrer', value: referrer, inline: true });
+        
+        // Add browser info (simplified)
+        if (userAgent) {
+            const browserInfo = getBrowserInfo(userAgent);
+            embed.fields.push({ 
+                name: '🌐 Browser', 
+                value: browserInfo, 
+                inline: true 
+            });
         }
 
         const webhookPayload = {
-            username: 'Site Visits',
-            avatar_url: 'https://cdn.discordapp.com/emojis/🌐.png',
+            username: 'Site Analytics',
+            avatar_url: 'https://cdn.discordapp.com/emojis/📊.png',
             embeds: [embed]
         };
 
@@ -403,13 +445,28 @@ app.post('/api/visit', async (req, res) => {
             return res.status(500).json({ error: 'Failed to send webhook' });
         }
 
-        console.log(`📊 Visit logged: ${page} from ${ip}`);
-        res.json({ success: true });
+        console.log(`📊 Visit logged: ${page} from ${locationStr}`);
+        res.json({ success: true, message: 'Visit tracked successfully' });
     } catch (error) {
         console.error('Error logging visit:', error);
         res.status(500).json({ error: 'Failed to log visit' });
     }
 });
+
+// Helper function to extract browser info from user agent
+function getBrowserInfo(userAgent) {
+    if (userAgent.includes('Chrome') && !userAgent.includes('Edg')) return '🟢 Chrome';
+    if (userAgent.includes('Firefox')) return '🟠 Firefox';
+    if (userAgent.includes('Safari') && !userAgent.includes('Chrome')) return '🔵 Safari';
+    if (userAgent.includes('Edg')) return '🟦 Edge';
+    if (userAgent.includes('Opera')) return '🔴 Opera';
+    return '❓ Unknown Browser';
+}
+
+        if (!response.ok) {
+            console.error('Discord webhook error:', response.status, await response.text());
+            return res.status(500).json({ error: 'Failed to send webhook' });
+        }
 
 // Health check endpoint
 app.get('/health', (req, res) => {
