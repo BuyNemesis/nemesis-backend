@@ -294,6 +294,67 @@ app.get('/api/media', async (req, res) => {
     }
 });
 
+// Feature videos endpoint - fetch MP4 files from SITE_RELATED_MEDIA channel
+app.get('/api/feature-videos', async (req, res) => {
+    try {
+        const FEATURE_VIDEOS_CHANNEL_ID = process.env.SITE_RELATED_MEDIA || '1427220027232485447';
+        
+        console.log(`Fetching feature videos from Discord channel ${FEATURE_VIDEOS_CHANNEL_ID}`);
+        
+        const response = await fetch(`https://discord.com/api/v10/channels/${FEATURE_VIDEOS_CHANNEL_ID}/messages?limit=100`, {
+            headers: {
+                'Authorization': `Bot ${BOT_TOKEN}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
+        }
+
+        const messages = await response.json();
+        console.log(`Fetched ${messages.length} messages from feature videos channel`);
+
+        const videos = [];
+        
+        messages.forEach(msg => {
+            if (msg.author.bot) return;
+            
+            // Check for MP4 attachments
+            if (msg.attachments && msg.attachments.length > 0) {
+                msg.attachments.forEach(attachment => {
+                    const fname = (attachment.filename || '').toLowerCase();
+                    const ctype = (attachment.content_type || '').toLowerCase();
+                    
+                    // Only MP4 video files
+                    if ((ctype.startsWith('video/') || fname.endsWith('.mp4')) && fname.endsWith('.mp4')) {
+                        videos.push({
+                            name: attachment.filename, // e.g., "Aimbot.mp4", "Main_Menu.mp4"
+                            url: attachment.url, // Direct Discord CDN URL
+                            messageId: msg.id,
+                            timestamp: msg.timestamp
+                        });
+                        console.log(`Found feature video: ${attachment.filename}`);
+                    }
+                });
+            }
+        });
+        
+        // Sort by date (newest first)
+        videos.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+        console.log(`Returning ${videos.length} feature videos`);
+
+        res.json({ videos });
+    } catch (error) {
+        console.error('Error fetching feature videos from Discord:', error);
+        res.status(500).json({
+            error: 'Failed to fetch feature videos',
+            message: error.message
+        });
+    }
+});
+
 // Patchnotes endpoint - read plaintext patchnotes from the development channel
 app.get('/api/patchnotes', async (req, res) => {
     try {
@@ -535,11 +596,13 @@ app.get('/api/health', (req, res) => {
             '/api/members': 'Active',
             '/api/configs': 'Active',
             '/api/reviews': 'Active',
-            '/api/media': 'Active'
+            '/api/media': 'Active',
+            '/api/feature-videos': 'Active'
         },
         bot_token: !!BOT_TOKEN,
         guild_id: process.env.GUILD_ID || '1426384773131010070',
         buyer_media_channel_id: BUYER_MEDIA_CHANNEL_ID,
+        feature_videos_channel_id: process.env.SITE_RELATED_MEDIA || '1427220027232485447',
         timestamp: new Date().toISOString()
     });
 });
