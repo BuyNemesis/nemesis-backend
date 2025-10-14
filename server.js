@@ -320,21 +320,21 @@ app.get('/api/feature-videos', async (req, res) => {
         messages.forEach(msg => {
             if (msg.author.bot) return;
             
-            // Check for MP4 attachments
+            // Check for MP4 and PNG attachments
             if (msg.attachments && msg.attachments.length > 0) {
                 msg.attachments.forEach(attachment => {
                     const fname = (attachment.filename || '').toLowerCase();
                     const ctype = (attachment.content_type || '').toLowerCase();
                     
-                    // Only MP4 video files
-                    if ((ctype.startsWith('video/') || fname.endsWith('.mp4')) && fname.endsWith('.mp4')) {
+                    // MP4 video files OR PNG image files
+                    if (fname.endsWith('.mp4') || fname.endsWith('.png')) {
                         videos.push({
-                            name: attachment.filename, // e.g., "Aimbot.mp4", "Main_Menu.mp4"
+                            name: attachment.filename, // e.g., "Aimbot.mp4", "ESP.png", "NO_ESP.png"
                             url: attachment.url, // Direct Discord CDN URL
                             messageId: msg.id,
                             timestamp: msg.timestamp
                         });
-                        console.log(`Found feature video: ${attachment.filename}`);
+                        console.log(`Found feature media: ${attachment.filename}`);
                     }
                 });
             }
