@@ -618,68 +618,63 @@ app.get('/api/configs', async (req, res) => {
     try {
         const offset = parseInt(req.query.offset) || 0;
         const limit = parseInt(req.query.limit) || 12;
-
-        console.log(`Fetching configs from Discord channels... offset: ${offset}, limit: ${limit}`);
-
         let allConfigs = [];
 
-        // Helper function to fetch configs from a channel
-        async function fetchConfigsFromChannel(channelId) {
-            let lastMessageId = undefined;
-            let keepFetching = true;
-            let channelConfigs = [];
+        // Fetch from both channels in parallel
+        try {
+            const [response1, response2] = await Promise.all([
+                fetch(`https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID}/messages?limit=100`, {
+                    headers: {
+                        'Authorization': `Bot ${BOT_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    }
+                }),
+                fetch(`https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID2}/messages?limit=100`, {
+                    headers: {
+                        'Authorization': `Bot ${BOT_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    }
+                })
+            ]);
 
-            while (keepFetching) {
-                let url = `https://discord.com/api/v10/channels/${channelId}/messages?limit=100`;
-            if (lastMessageId) {
-                url += `&before=${lastMessageId}`;
+            if (!response1.ok || !response2.ok) {
+                throw new Error('Failed to fetch from one or both channels');
             }
 
-            const response = await fetch(url, {
-                headers: {
-                    'Authorization': `Bot ${BOT_TOKEN}`,
-                    'Content-Type': 'application/json'
+            // Get messages from both channels
+            const [messages1, messages2] = await Promise.all([
+                response1.json(),
+                response2.json()
+            ]);
+
+            // Process messages from both channels
+            [messages1, messages2].forEach(messages => {
+                if (Array.isArray(messages)) {
+                    messages.forEach(msg => {
+                        if (msg.attachments && Array.isArray(msg.attachments)) {
+                            msg.attachments.forEach(attachment => {
+                                if (attachment.filename && attachment.filename.toLowerCase().endsWith('.ini')) {
+                                    allConfigs.push({
+                                        filename: attachment.filename,
+                                        url: attachment.url,
+                                        size: attachment.size || 0,
+                                        author: msg.author?.username || 'Unknown',
+                                        avatarUrl: msg.author?.avatar 
+                                            ? `https://cdn.discordapp.com/avatars/${msg.author.id}/${msg.author.avatar}.png`
+                                            : null,
+                                        date: msg.timestamp,
+                                        messageId: msg.id
+                                    });
+                                }
+                            });
+                        }
+                    });
                 }
             });
 
-            if (!response.ok) {
-                throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
-            }
-
-            const messages = await response.json();
-
-            if (!Array.isArray(messages) || messages.length === 0) {
-                keepFetching = false;
-                break;
-            }
-
-            // Extract .ini files from attachments
-            for (const msg of messages) {
-                if (msg.attachments && Array.isArray(msg.attachments)) {
-                    for (const attachment of msg.attachments) {
-                        if (attachment.filename && attachment.filename.toLowerCase().endsWith('.ini')) {
-                            allConfigs.push({
-                                filename: attachment.filename,
-                                url: attachment.url,
-                                size: attachment.size || 0,
-                                author: msg.author?.username || 'Unknown',
-                                avatarUrl: msg.author?.avatar 
-                                    ? `https://cdn.discordapp.com/avatars/${msg.author.id}/${msg.author.avatar}.png`
-                                    : null,
-                                date: msg.timestamp,
-                                messageId: msg.id
-                            });
-                            console.log(`Found config: ${attachment.filename} (${attachment.size} bytes) by ${msg.author?.username}`);
-                        }
-                    }
-                }
-            }
-
-            if (messages.length < 100) {
-                keepFetching = false;
-            } else {
-                lastMessageId = messages[messages.length - 1].id;
-            }
+        } catch (fetchError) {
+            console.error('Error fetching configs from channels:', fetchError);
+            throw fetchError;
         }
 
         // Sort by date (newest first)
@@ -696,7 +691,7 @@ app.get('/api/configs', async (req, res) => {
             hasMore: offset + limit < totalConfigs
         });
     } catch (error) {
-        console.error('Error fetching configs from Discord:', error);
+        console.error('Error in /api/configs:', error);
         res.status(500).json({
             error: 'Failed to fetch configs',
             message: error.message
@@ -949,6 +944,8 @@ app.get('/api/raw-config/:configId', (req, res) => {
         res.status(500).send('Internal server error');
     }
 });
+
+
 
 // Original cached-configs endpoint (kept for backward compatibility)
 app.get('/api/cached-configs', (req, res) => {
