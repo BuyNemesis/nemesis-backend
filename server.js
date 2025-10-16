@@ -1,7 +1,6 @@
 // Load environment variables (for local development)
 require('dotenv').config();
 
-
 const fs = require('fs');
 const path = require('path');
 
@@ -205,7 +204,7 @@ app.get('/api/media', async (req, res) => {
         const streamableRegex = /streamable\.com\/([a-zA-Z0-9]+)/gi;
         
         const allVideos = [];
-    const allPhotos = [];
+        const allPhotos = [];
         
         messages.forEach(msg => {
             if (msg.author.bot) return;
@@ -641,6 +640,62 @@ app.get('/api/configs', async (req, res) => {
     }
 });
 
+// Proxy endpoint to fetch config file content from Discord CDN, with caching
+app.get('/api/config-content', async (req, res) => {
+    try {
+        const url = req.query.url;
+        if (!url || !url.startsWith('https://cdn.discordapp.com/attachments/')) {
+            return res.status(400).json({ error: 'Invalid or missing url parameter' });
+        }
+
+        // Use the last part of the URL as the cache filename
+        const cacheKey = url.split('/').slice(-2).join('_');
+        const cachePath = path.join(CACHE_DIR, cacheKey);
+
+        // If cached, serve from cache
+        if (fs.existsSync(cachePath)) {
+            console.log(`📦 Serving config from cache: ${cacheKey}`);
+            res.set('Content-Type', 'text/plain');
+            return res.send(fs.readFileSync(cachePath, 'utf8'));
+        }
+
+        // Otherwise, fetch from Discord CDN
+        console.log(`📥 Fetching config from Discord CDN: ${url}`);
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'NemesisConfigProxy/1.0'
+            }
+        });
+
+        if (!response.ok) {
+            console.error(`Failed to fetch from CDN: ${response.status}`);
+            // If cache exists but CDN fails, serve stale cache
+            if (fs.existsSync(cachePath)) {
+                console.log(`📦 Serving stale cache (CDN failed): ${cacheKey}`);
+                res.set('Content-Type', 'text/plain');
+                return res.send(fs.readFileSync(cachePath, 'utf8'));
+            }
+            return res.status(502).json({ error: 'Failed to fetch config from Discord CDN', status: response.status });
+        }
+
+        const text = await response.text();
+
+        // Save to cache
+        try {
+            fs.writeFileSync(cachePath, text, 'utf8');
+            console.log(`💾 Cached config: ${cacheKey}`);
+        } catch (cacheErr) {
+            console.warn(`Warning: Failed to cache config: ${cacheErr.message}`);
+        }
+
+        res.set('Content-Type', 'text/plain');
+        res.send(text);
+    } catch (err) {
+        console.error('Error in /api/config-content:', err);
+        res.status(500).json({ error: 'Internal server error', message: err.message });
+    }
+});
+
 // API route health checks
 app.get('/api/health', (req, res) => {
     res.json({
@@ -650,7 +705,8 @@ app.get('/api/health', (req, res) => {
             '/api/configs': 'Active',
             '/api/reviews': 'Active',
             '/api/media': 'Active',
-            '/api/feature-videos': 'Active'
+            '/api/feature-videos': 'Active',
+            '/api/config-content': 'Active'
         },
         bot_token: !!BOT_TOKEN,
         guild_id: process.env.GUILD_ID || '1426384773131010070',
@@ -673,63 +729,9 @@ app.use('/api/*', (req, res) => {
 });
 
 // Serve static files for non-API routes
-// Proxy endpoint to fetch config file content from Discord CDN, with caching
-app.get('/api/config-content', async (req, res) => {
-    try {
-        const url = req.query.url;
-        if (!url || !url.startsWith('https://cdn.discordapp.com/attachments/')) {
-            return res.status(400).json({ error: 'Invalid or missing url parameter' });
-        }
-        // Use the last part of the URL as the cache filename
-        const cacheKey = url.split('/').slice(-2).join('_');
-        const cachePath = path.join(CACHE_DIR, cacheKey);
-        // If cached, serve from cache
-        if (fs.existsSync(cachePath)) {
-            res.set('Content-Type', 'text/plain');
-            return res.send(fs.readFileSync(cachePath, 'utf8'));
-        }
-        // Otherwise, fetch from Discord CDN
-        const response = await fetch(url, {
-            headers: {
-                'User-Agent': 'NemesisConfigProxy/1.0'
-            }
-        });
-        if (!response.ok) {
-            // If cache exists but CDN fails, serve stale cache
-            if (fs.existsSync(cachePath)) {
-                res.set('Content-Type', 'text/plain');
-                return res.send(fs.readFileSync(cachePath, 'utf8'));
-            }
-            return res.status(502).json({ error: 'Failed to fetch config from Discord CDN', status: response.status });
-        }
-        const text = await response.text();
-        // Save to cache
-        fs.writeFileSync(cachePath, text, 'utf8');
-        res.set('Content-Type', 'text/plain');
-        res.send(text);
-    } catch (err) {
-        res.status(500).json({ error: 'Internal server error', message: err.message });
-    }
-});
-
 app.use(express.static('.'));
 
 // Final catch-all for 404s
 app.use((req, res) => {
     console.log('⚠️ 404 Not Found:', req.method, req.url);
-    res.status(404).send('404 Not Found');
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`🚀 Discord Reviews API running on port ${PORT}`);
-    console.log(`📝 Reviews Channel ID: ${CHANNEL_ID}`);
-    console.log(`🎬 Buyer Media Channel ID: ${BUYER_MEDIA_CHANNEL_ID}`);
-    console.log(`📋 Configs Channel ID: ${CONFIGS_CHANNEL_ID}`);
-    console.log(`🔗 Health check: http://localhost:${PORT}/health`);
-    console.log(`📝 Reviews endpoint: http://localhost:${PORT}/api/reviews`);
-    console.log(`🎥 Media endpoint: http://localhost:${PORT}/api/media`);
-    console.log(`📁 Configs endpoint: http://localhost:${PORT}/api/configs`);
-    console.log(`🌐 Website: http://localhost:${PORT}/`);
-    console.log('🔒 Bot token loaded securely from environment variables');
-});
+    res.status(404).send('
