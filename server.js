@@ -30,6 +30,7 @@ app.use((req, res, next) => {
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID || '1424944848187953174';
 const CONFIGS_CHANNEL_ID = process.env.CONFIGS_CHANNEL_ID;
+const CONFIGS_CHANNEL_ID2 = process.env.CONFIGS_CHANNEL_ID2 || '1426403948281200650';
 const BUYER_MEDIA_CHANNEL_ID = process.env.BUYER_MEDIA_CHANNEL_ID || '1426388792012705874';
 
 // Validate required environment variables
@@ -552,21 +553,24 @@ app.get('/health', (req, res) => {
     });
 });
 
-// Endpoint to fetch all config files from the configs channel
+// Endpoint to fetch all config files from the configs channels
 app.get('/api/configs', async (req, res) => {
     try {
         const offset = parseInt(req.query.offset) || 0;
         const limit = parseInt(req.query.limit) || 12;
 
-        console.log(`Fetching configs from Discord channel ${CONFIGS_CHANNEL_ID}... offset: ${offset}, limit: ${limit}`);
+        console.log(`Fetching configs from Discord channels... offset: ${offset}, limit: ${limit}`);
 
         let allConfigs = [];
-        let lastMessageId = undefined;
-        let keepFetching = true;
 
-        // Paginate through all messages in the configs channel
-        while (keepFetching) {
-            let url = `https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID}/messages?limit=100`;
+        // Helper function to fetch configs from a channel
+        async function fetchConfigsFromChannel(channelId) {
+            let lastMessageId = undefined;
+            let keepFetching = true;
+            let channelConfigs = [];
+
+            while (keepFetching) {
+                let url = `https://discord.com/api/v10/channels/${channelId}/messages?limit=100`;
             if (lastMessageId) {
                 url += `&before=${lastMessageId}`;
             }
@@ -941,6 +945,79 @@ app.use('/api/*', (req, res) => {
         url: req.url,
         timestamp: new Date().toISOString()
     });
+});
+
+// New endpoint to count configs from both channels
+app.get('/api/configs-count', async (req, res) => {
+    try {
+        // Helper function to count configs in a channel
+        async function countConfigsInChannel(channelId) {
+            let count = 0;
+            let lastMessageId = undefined;
+            let keepFetching = true;
+
+            while (keepFetching) {
+                let url = `https://discord.com/api/v10/channels/${channelId}/messages?limit=100`;
+                if (lastMessageId) {
+                    url += `&before=${lastMessageId}`;
+                }
+
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bot ${BOT_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
+                }
+
+                const messages = await response.json();
+
+                if (!Array.isArray(messages) || messages.length === 0) {
+                    break;
+                }
+
+                // Count .ini files in attachments
+                for (const msg of messages) {
+                    if (msg.attachments) {
+                        count += msg.attachments.filter(att => 
+                            att.filename && att.filename.toLowerCase().endsWith('.ini')
+                        ).length;
+                    }
+                }
+
+                if (messages.length < 100) {
+                    break;
+                } else {
+                    lastMessageId = messages[messages.length - 1].id;
+                }
+            }
+
+            return count;
+        }
+
+        // Get counts from both channels in parallel
+        const [count1, count2] = await Promise.all([
+            countConfigsInChannel(CONFIGS_CHANNEL_ID),
+            countConfigsInChannel(CONFIGS_CHANNEL_ID2)
+        ]);
+
+        const totalCount = count1 + count2;
+        console.log(`Found ${totalCount} total configs (${count1} from channel 1, ${count2} from channel 2)`);
+
+        res.json({
+            count: totalCount,
+            channels: {
+                primary: count1,
+                secondary: count2
+            }
+        });
+    } catch (error) {
+        console.error('Error counting configs:', error);
+        res.status(500).json({ error: 'Failed to count configs', message: error.message });
+    }
 });
 
 // Serve static files for non-API routes
