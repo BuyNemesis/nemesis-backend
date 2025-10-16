@@ -737,9 +737,13 @@ app.get('/api/configs', async (req, res) => {
                                 // Parse the config name and description from message content
                                 const messageLines = msg.content ? msg.content.trim().split('\n') : [];
                                 const configName = messageLines[0] || attachment.filename.replace(/\.ini$/, '');
-                                const description = messageLines.slice(1).join('\n').trim();
+                                const fullDescription = messageLines.slice(1).join('\n').trim();
+                                const description = fullDescription.length > 60 ? 
+                                    fullDescription.substring(0, 60).trim() + '...' : 
+                                    fullDescription;
                                 
                                 allConfigs.push({
+                                    fullDescription,
                                     filename: configName,
                                     description: description || '',
                                     url: attachment.url,
