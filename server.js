@@ -707,57 +707,44 @@ app.get('/api/configs', async (req, res) => {
         const limit = parseInt(req.query.limit) || 12;
         let allConfigs = [];
 
-        // Fetch from both channels in parallel
+        // Fetch only from main configs channel
         try {
-            const [response1, response2] = await Promise.all([
-                fetch(`https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID}/messages?limit=100`, {
-                    headers: {
-                        'Authorization': `Bot ${BOT_TOKEN}`,
-                        'Content-Type': 'application/json'
-                    }
-                }),
-                fetch(`https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID2}/messages?limit=100`, {
-                    headers: {
-                        'Authorization': `Bot ${BOT_TOKEN}`,
-                        'Content-Type': 'application/json'
-                    }
-                })
-            ]);
-
-            if (!response1.ok || !response2.ok) {
-                throw new Error('Failed to fetch from one or both channels');
-            }
-
-            // Get messages from both channels
-            const [messages1, messages2] = await Promise.all([
-                response1.json(),
-                response2.json()
-            ]);
-
-            // Process messages from both channels
-            [messages1, messages2].forEach(messages => {
-                if (Array.isArray(messages)) {
-                    messages.forEach(msg => {
-                        if (msg.attachments && Array.isArray(msg.attachments)) {
-                            msg.attachments.forEach(attachment => {
-                                if (attachment.filename && attachment.filename.toLowerCase().endsWith('.ini')) {
-                                    allConfigs.push({
-                                        filename: attachment.filename,
-                                        url: attachment.url,
-                                        size: attachment.size || 0,
-                                        author: msg.author?.username || 'Unknown',
-                                        avatarUrl: msg.author?.avatar 
-                                            ? `https://cdn.discordapp.com/avatars/${msg.author.id}/${msg.author.avatar}.png`
-                                            : null,
-                                        date: msg.timestamp,
-                                        messageId: msg.id
-                                    });
-                                }
-                            });
-                        }
-                    });
+            const response = await fetch(`https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID}/messages?limit=100`, {
+                headers: {
+                    'Authorization': `Bot ${BOT_TOKEN}`,
+                    'Content-Type': 'application/json'
                 }
             });
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch from configs channel');
+            }
+
+            // Get messages from channel
+            const messages = await response.json();
+
+            // Process messages from channel
+            if (Array.isArray(messages)) {
+                messages.forEach(msg => {
+                    if (msg.attachments && Array.isArray(msg.attachments)) {
+                        msg.attachments.forEach(attachment => {
+                            if (attachment.filename && attachment.filename.toLowerCase().endsWith('.ini')) {
+                                allConfigs.push({
+                                    filename: attachment.filename,
+                                    url: attachment.url,
+                                    size: attachment.size || 0,
+                                    author: msg.author?.username || 'Unknown',
+                                    avatarUrl: msg.author?.avatar 
+                                        ? `https://cdn.discordapp.com/avatars/${msg.author.id}/${msg.author.avatar}.png`
+                                        : null,
+                                    date: msg.timestamp,
+                                    messageId: msg.id
+                                });
+                            }
+                        });
+                    }
+                });
+            }
 
         } catch (fetchError) {
             console.error('Error fetching configs from channels:', fetchError);
