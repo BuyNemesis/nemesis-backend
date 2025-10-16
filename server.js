@@ -664,6 +664,29 @@ app.use('/api/*', (req, res) => {
 
 // Serve static files for non-API routes
 app.use(express.static('.'));
+    // Proxy endpoint to fetch config file content from Discord CDN
+    app.get('/api/config-content', async (req, res) => {
+        try {
+            const url = req.query.url;
+            if (!url || !url.startsWith('https://cdn.discordapp.com/attachments/')) {
+                return res.status(400).json({ error: 'Invalid or missing url parameter' });
+            }
+            const response = await fetch(url, {
+                headers: {
+                    // No auth needed for CDN, but set a user-agent for good measure
+                    'User-Agent': 'NemesisConfigProxy/1.0'
+                }
+            });
+            if (!response.ok) {
+                return res.status(502).json({ error: 'Failed to fetch config from Discord CDN', status: response.status });
+            }
+            res.set('Content-Type', 'text/plain');
+            const text = await response.text();
+            res.send(text);
+        } catch (err) {
+            res.status(500).json({ error: 'Internal server error', message: err.message });
+        }
+    });
 
 // Final catch-all for 404s
 app.use((req, res) => {
