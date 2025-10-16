@@ -890,6 +890,66 @@ app.get('/api/raw-config/:configId', (req, res) => {
     }
 });
 
+// Config count endpoint for total configs across both channels
+app.get('/api/configs-count', async (req, res) => {
+    try {
+        const [primaryConfigs, secondaryConfigs] = await Promise.all([
+            fetch(`https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID}/messages?limit=100`, {
+                headers: {
+                    'Authorization': `Bot ${BOT_TOKEN}`,
+                    'Content-Type': 'application/json'
+                }
+            }).then(r => r.json()),
+            fetch(`https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID2}/messages?limit=100`, {
+                headers: {
+                    'Authorization': `Bot ${BOT_TOKEN}`,
+                    'Content-Type': 'application/json'
+                }
+            }).then(r => r.json())
+        ]);
+
+        let totalCount = 0;
+        let primaryCount = 0;
+        let secondaryCount = 0;
+
+        if (Array.isArray(primaryConfigs)) {
+            primaryCount = primaryConfigs.reduce((count, msg) => {
+                if (msg.attachments) {
+                    return count + msg.attachments.filter(att => 
+                        att.filename && att.filename.toLowerCase().endsWith('.ini')
+                    ).length;
+                }
+                return count;
+            }, 0);
+        }
+
+        if (Array.isArray(secondaryConfigs)) {
+            secondaryCount = secondaryConfigs.reduce((count, msg) => {
+                if (msg.attachments) {
+                    return count + msg.attachments.filter(att => 
+                        att.filename && att.filename.toLowerCase().endsWith('.ini')
+                    ).length;
+                }
+                return count;
+            }, 0);
+        }
+
+        totalCount = primaryCount + secondaryCount;
+        console.log(`Config count - Primary: ${primaryCount}, Secondary: ${secondaryCount}, Total: ${totalCount}`);
+
+        res.json({
+            count: totalCount,
+            channels: {
+                primary: primaryCount,
+                secondary: secondaryCount
+            }
+        });
+    } catch (error) {
+        console.error('Error counting configs:', error);
+        res.status(500).json({ error: 'Failed to count configs', message: error.message });
+    }
+});
+
 // Original cached-configs endpoint (kept for backward compatibility)
 app.get('/api/cached-configs', (req, res) => {
     try {
