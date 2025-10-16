@@ -665,17 +665,20 @@ app.get('/api/live-status', async (req, res) => {
         // The channel name itself contains the status emoji
         const emoji = channelName.match(/[🟢🔴🟡]/)?.[0] || '⚫';
         
-        // Map emoji to color
-        const colorMap = {
-            '🟢': 'green',
-            '🔴': 'red',
-            '🟡': 'yellow',
-            '⚫': 'gray'
+        // Map emoji to status info
+        const statusMap = {
+            '🟢': { color: 'green', text: 'Online' },
+            '🔴': { color: 'red', text: 'Offline' },
+            '🟡': { color: 'yellow', text: 'Maintenance' },
+            '⚫': { color: 'gray', text: 'Unknown' }
         };
+
+        const status = statusMap[emoji] || statusMap['⚫'];
 
         res.json({
             status: emoji,
-            color: colorMap[emoji],
+            color: status.color,
+            text: status.text,
             timestamp: new Date().toISOString()
         });
     } catch (error) {
