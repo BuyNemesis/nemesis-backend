@@ -410,12 +410,25 @@ app.get('/api/media', async (req, res) => {
     }
 });
 
-// Feature videos endpoint - fetch MP4 files from SITE_RELATED_MEDIA channel
-app.get('/api/feature-videos', async (req, res) => {
+// In-memory cache for feature videos/images
+let featureMediaCache = {
+    data: [],
+    lastUpdated: 0,
+    updating: false
+};
+
+// Refresh interval in milliseconds (5 minutes)
+const FEATURE_MEDIA_CACHE_REFRESH_INTERVAL = 5 * 60 * 1000;
+
+// Function to refresh feature media cache
+async function refreshFeatureMediaCache() {
+    if (featureMediaCache.updating) return;
+    featureMediaCache.updating = true;
+
     try {
         const FEATURE_VIDEOS_CHANNEL_ID = process.env.SITE_RELATED_MEDIA || '1427220027232485447';
         
-        console.log(`Fetching feature videos from Discord channel ${FEATURE_VIDEOS_CHANNEL_ID}`);
+        console.log(`Refreshing feature media cache from channel ${FEATURE_VIDEOS_CHANNEL_ID}`);
         
         const response = await fetch(`https://discord.com/api/v10/channels/${FEATURE_VIDEOS_CHANNEL_ID}/messages?limit=100`, {
             headers: {
@@ -436,21 +449,19 @@ app.get('/api/feature-videos', async (req, res) => {
         messages.forEach(msg => {
             if (msg.author.bot) return;
             
-            // Check for MP4 and PNG attachments
             if (msg.attachments && msg.attachments.length > 0) {
                 msg.attachments.forEach(attachment => {
                     const fname = (attachment.filename || '').toLowerCase();
                     const ctype = (attachment.content_type || '').toLowerCase();
                     
-                    // MP4 video files OR PNG image files
                     if (fname.endsWith('.mp4') || fname.endsWith('.png')) {
                         videos.push({
-                            name: attachment.filename, // e.g., "Aimbot.mp4", "ESP.png", "NO_ESP.png"
-                            url: attachment.url, // Direct Discord CDN URL
+                            name: attachment.filename,
+                            url: attachment.url,
+                            type: fname.endsWith('.mp4') ? 'video' : 'image',
                             messageId: msg.id,
                             timestamp: msg.timestamp
                         });
-                        console.log(`Found feature media: ${attachment.filename}`);
                     }
                 });
             }
@@ -459,11 +470,55 @@ app.get('/api/feature-videos', async (req, res) => {
         // Sort by date (newest first)
         videos.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-        console.log(`Returning ${videos.length} feature videos`);
+        // Update cache
+        featureMediaCache.data = videos;
+        featureMediaCache.lastUpdated = Date.now();
+        featureMediaCache.updating = false;
 
-        res.json({ videos });
+        console.log(`✨ Feature media cache refreshed with ${videos.length} items`);
     } catch (error) {
-        console.error('Error fetching feature videos from Discord:', error);
+        console.error('Error refreshing feature media cache:', error);
+        featureMediaCache.updating = false;
+    }
+}
+
+// Setup periodic cache refresh
+setInterval(refreshFeatureMediaCache, FEATURE_MEDIA_CACHE_REFRESH_INTERVAL);
+
+// Feature videos endpoint - now with caching
+app.get('/api/feature-videos', async (req, res) => {
+    try {
+        // Check if cache needs refresh
+        const now = Date.now();
+        if (now - featureMediaCache.lastUpdated > FEATURE_MEDIA_CACHE_REFRESH_INTERVAL) {
+            await refreshFeatureMediaCache();
+        }
+
+        // Use cached data
+        const videos = featureMediaCache.data;
+        
+        console.log(`Returning ${videos.length} feature videos/images from cache`);
+
+        res.json({ 
+            videos,
+            fromCache: true,
+            lastUpdated: new Date(featureMediaCache.lastUpdated).toISOString()
+        });
+    } catch (error) {
+        console.error('Error in /api/feature-videos:', error);
+        
+        // If there's an error but we have cached data, return that instead
+        if (featureMediaCache.data.length > 0) {
+            console.log(`[FALLBACK] Serving ${featureMediaCache.data.length} feature videos/images from cache`);
+            
+            return res.json({
+                videos: featureMediaCache.data,
+                fromCache: true,
+                lastUpdated: new Date(featureMediaCache.lastUpdated).toISOString(),
+                fallback: true
+            });
+        }
+
         res.status(500).json({
             error: 'Failed to fetch feature videos',
             message: error.message
@@ -890,59 +945,25 @@ app.get('/api/config-content', async (req, res) => {
 // Initialize cache on startup (optimized)
 async function initializeCache() {
     try {
-        console.log('🔄 Initializing config cache...');
+        console.log('🔄 Initializing caches...');
         
-        // Start the server immediately and initialize cache in background
+        // Start the server immediately and initialize caches in background
         setTimeout(async () => {
             try {
-                const response = await fetch(`https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID}/messages?limit=100`, {
-                    headers: {
-                        'Authorization': `Bot ${BOT_TOKEN}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
-                }
-
-                const messages = await response.json();
-                let cacheCount = 0;
+                // Initialize configs cache
+                await refreshConfigsCache();
                 
-                // Process configs in parallel batches
-                const batchSize = 5;
-                for (let i = 0; i < messages.length; i += batchSize) {
-                    const batch = messages.slice(i, i + batchSize);
-                    await Promise.all(batch.map(async (msg) => {
-                        if (msg.attachments) {
-                            for (const attachment of msg.attachments) {
-                                if (attachment.filename.toLowerCase().endsWith('.ini')) {
-                                    try {
-                                        const configResponse = await fetch(attachment.url);
-                                        if (configResponse.ok) {
-                                            const content = await configResponse.text();
-                                            const cacheKey = `${msg.id}_${attachment.filename}`;
-                                            const cachePath = path.join(CACHE_DIR, cacheKey);
-                                            fs.writeFileSync(cachePath, content, 'utf8');
-                                            cacheCount++;
-                                        }
-                                    } catch (err) {
-                                        console.warn(`⚠️ Failed to cache config ${attachment.filename}:`, err.message);
-                                    }
-                                }
-                            }
-                        }
-                    }));
-                }
+                // Initialize feature media cache
+                await refreshFeatureMediaCache();
                 
-                console.log(`✅ Cache initialized with ${cacheCount} configs`);
+                console.log('✅ All caches initialized successfully');
             } catch (error) {
                 console.error('❌ Error during background cache initialization:', error);
             }
         }, 0);
         
     } catch (error) {
-        console.error('❌ Error initializing cache:', error);
+        console.error('❌ Error initializing caches:', error);
     }
 }
 
