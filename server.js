@@ -1,6 +1,16 @@
 // Load environment variables (for local development)
 require('dotenv').config();
 
+
+const fs = require('fs');
+const path = require('path');
+
+// Ensure cache directory exists
+const CACHE_DIR = path.join(__dirname, 'config_cache');
+if (!fs.existsSync(CACHE_DIR)) {
+    fs.mkdirSync(CACHE_DIR);
+}
+
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
@@ -664,53 +674,45 @@ app.use('/api/*', (req, res) => {
 
 // Serve static files for non-API routes
 app.use(express.static('.'));
-    const fs = require('fs');
-    const path = require('path');
 
-    // Ensure cache directory exists
-    const CACHE_DIR = path.join(__dirname, 'config_cache');
-    if (!fs.existsSync(CACHE_DIR)) {
-        fs.mkdirSync(CACHE_DIR);
-    }
-
-    // Proxy endpoint to fetch config file content from Discord CDN, with caching
-    app.get('/api/config-content', async (req, res) => {
-        try {
-            const url = req.query.url;
-            if (!url || !url.startsWith('https://cdn.discordapp.com/attachments/')) {
-                return res.status(400).json({ error: 'Invalid or missing url parameter' });
+// Proxy endpoint to fetch config file content from Discord CDN, with caching
+app.get('/api/config-content', async (req, res) => {
+    try {
+        const url = req.query.url;
+        if (!url || !url.startsWith('https://cdn.discordapp.com/attachments/')) {
+            return res.status(400).json({ error: 'Invalid or missing url parameter' });
+        }
+        // Use the last part of the URL as the cache filename
+        const cacheKey = url.split('/').slice(-2).join('_');
+        const cachePath = path.join(CACHE_DIR, cacheKey);
+        // If cached, serve from cache
+        if (fs.existsSync(cachePath)) {
+            res.set('Content-Type', 'text/plain');
+            return res.send(fs.readFileSync(cachePath, 'utf8'));
+        }
+        // Otherwise, fetch from Discord CDN
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'NemesisConfigProxy/1.0'
             }
-            // Use the last part of the URL as the cache filename
-            const cacheKey = url.split('/').slice(-2).join('_');
-            const cachePath = path.join(CACHE_DIR, cacheKey);
-            // If cached, serve from cache
+        });
+        if (!response.ok) {
+            // If cache exists but CDN fails, serve stale cache
             if (fs.existsSync(cachePath)) {
                 res.set('Content-Type', 'text/plain');
                 return res.send(fs.readFileSync(cachePath, 'utf8'));
             }
-            // Otherwise, fetch from Discord CDN
-            const response = await fetch(url, {
-                headers: {
-                    'User-Agent': 'NemesisConfigProxy/1.0'
-                }
-            });
-            if (!response.ok) {
-                // If cache exists but CDN fails, serve stale cache
-                if (fs.existsSync(cachePath)) {
-                    res.set('Content-Type', 'text/plain');
-                    return res.send(fs.readFileSync(cachePath, 'utf8'));
-                }
-                return res.status(502).json({ error: 'Failed to fetch config from Discord CDN', status: response.status });
-            }
-            const text = await response.text();
-            // Save to cache
-            fs.writeFileSync(cachePath, text, 'utf8');
-            res.set('Content-Type', 'text/plain');
-            res.send(text);
-        } catch (err) {
-            res.status(500).json({ error: 'Internal server error', message: err.message });
+            return res.status(502).json({ error: 'Failed to fetch config from Discord CDN', status: response.status });
         }
-    });
+        const text = await response.text();
+        // Save to cache
+        fs.writeFileSync(cachePath, text, 'utf8');
+        res.set('Content-Type', 'text/plain');
+        res.send(text);
+    } catch (err) {
+        res.status(500).json({ error: 'Internal server error', message: err.message });
+    }
+});
 
 // Final catch-all for 404s
 app.use((req, res) => {
