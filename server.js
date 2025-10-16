@@ -662,27 +662,20 @@ app.get('/api/live-status', async (req, res) => {
         const channel = await response.json();
         const channelName = channel.name || '';
 
-        // Extract emoji from channel name
-        let status = {
-            emoji: '',
-            color: 'yellow' // default color
+        // The channel name itself contains the status emoji
+        const emoji = channelName.match(/[🟢🔴🟡]/)?.[0] || '⚫';
+        
+        // Map emoji to color
+        const colorMap = {
+            '🟢': 'green',
+            '🔴': 'red',
+            '🟡': 'yellow',
+            '⚫': 'gray'
         };
 
-        // Check for status emojis in channel name
-        if (channelName.includes('🟢')) {
-            status.emoji = '🟢';
-            status.color = 'green';
-        } else if (channelName.includes('🔴')) {
-            status.emoji = '🔴';
-            status.color = 'red';
-        } else if (channelName.includes('🟡')) {
-            status.emoji = '🟡';
-            status.color = 'yellow';
-        }
-
         res.json({
-            status: status.emoji || '⚫',
-            color: status.color,
+            status: emoji,
+            color: colorMap[emoji],
             timestamp: new Date().toISOString()
         });
     } catch (error) {
