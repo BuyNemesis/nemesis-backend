@@ -71,6 +71,10 @@ app.get('/api/live-status', async (req, res) => {
             status.emoji = '🟡';
             status.color = 'yellow';
             status.text = 'Maintenance';
+        } else if (channelName.includes('🔵')) {
+            status.emoji = '🔵';
+            status.color = 'blue';
+            status.text = 'Updating';
         }
 
         res.json(status);
