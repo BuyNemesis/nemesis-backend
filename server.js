@@ -796,19 +796,19 @@ app.get('/api/load-config', async (req, res) => {
 
         const configPath = path.join(CACHE_DIR, requestedConfig);
         const configContent = fs.readFileSync(configPath, 'utf8');
-        const stats = fs.statSync(configPath);
 
-        // Return config content with metadata
-        res.json({
-            success: true,
-            config: {
-                id: configId,
-                filename: requestedConfig,
-                content: configContent,
-                timestamp: stats.mtime,
-                size: stats.size
-            }
-        });
+        // Try to parse and pretty print the JSON
+        try {
+            const jsonContent = JSON.parse(configContent);
+            // Set content type to text/plain to preserve formatting
+            res.set('Content-Type', 'text/plain');
+            // Send the prettified JSON with 4 space indentation
+            res.send(JSON.stringify(jsonContent, null, 4));
+        } catch (e) {
+            // If not valid JSON, send raw content
+            res.set('Content-Type', 'text/plain');
+            res.send(configContent);
+        }
     } catch (error) {
         console.error('Error loading config:', error);
         res.status(500).json({ error: 'Failed to load config', message: error.message });
