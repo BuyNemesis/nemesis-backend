@@ -88,21 +88,13 @@ app.get('/api/configs-count', async (req, res) => {
             }
         };
 
-        // Get counts from both channels
-        const [count1, count2] = await Promise.all([
-            getChannelConfigCount(CONFIGS_CHANNEL_ID),
-            getChannelConfigCount(CONFIGS_CHANNEL_ID2)
-        ]);
-
-        const totalCount = count1 + count2;
-        console.log(`Config count - Primary: ${count1}, Secondary: ${count2}, Total: ${totalCount}`);
+                // Only get count from CONFIGS_CHANNEL_ID2
+        const count = await getChannelConfigCount(CONFIGS_CHANNEL_ID2);
+        console.log(`Config count from channel ${CONFIGS_CHANNEL_ID2}: ${count}`);
 
         res.json({
-            count: totalCount,
-            channels: {
-                primary: count1,
-                secondary: count2
-            }
+            count: count,
+            channel: CONFIGS_CHANNEL_ID2
         });
     } catch (error) {
         console.error('Error getting config counts:', error);
