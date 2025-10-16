@@ -32,6 +32,56 @@ const CHANNEL_ID = process.env.CHANNEL_ID || '1424944848187953174';
 const CONFIGS_CHANNEL_ID = process.env.CONFIGS_CHANNEL_ID;
 const CONFIGS_CHANNEL_ID2 = process.env.CONFIGS_CHANNEL_ID2 || '1426403948281200650';
 const BUYER_MEDIA_CHANNEL_ID = process.env.BUYER_MEDIA_CHANNEL_ID || '1426388792012705874';
+const STATUS_CHANNEL_ID = process.env.STATUS_CHANNEL_ID || '1426384774167269502';
+
+// Endpoint to get live status from Discord channel
+app.get('/api/live-status', async (req, res) => {
+    try {
+        const response = await fetch(`https://discord.com/api/v10/channels/${STATUS_CHANNEL_ID}`, {
+            headers: {
+                'Authorization': `Bot ${BOT_TOKEN}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
+        }
+
+        const channel = await response.json();
+        const channelName = channel.name || '';
+
+        // Extract emoji from channel name
+        let status = {
+            emoji: '⚫',
+            color: 'gray', // default color
+            text: 'Unknown'
+        };
+
+        // Check for status emojis in channel name
+        if (channelName.includes('🟢')) {
+            status.emoji = '🟢';
+            status.color = 'green';
+            status.text = 'Online';
+        } else if (channelName.includes('🔴')) {
+            status.emoji = '🔴';
+            status.color = 'red';
+            status.text = 'Offline';
+        } else if (channelName.includes('🟡')) {
+            status.emoji = '🟡';
+            status.color = 'yellow';
+            status.text = 'Maintenance';
+        }
+
+        res.json(status);
+    } catch (error) {
+        console.error('Error fetching live status:', error);
+        res.status(500).json({
+            error: 'Failed to fetch status',
+            message: error.message
+        });
+    }
+});
 
 // Validate required environment variables
 if (!BOT_TOKEN) {
@@ -594,6 +644,55 @@ function getBrowserInfo(userAgent) {
     if (userAgent.includes('Opera')) return '🔴 Opera';
     return '❓ Unknown Browser';
 }
+
+// Get live status endpoint
+app.get('/api/live-status', async (req, res) => {
+    try {
+        const response = await fetch(`https://discord.com/api/v10/channels/${STATUS_CHANNEL_ID}`, {
+            headers: {
+                'Authorization': `Bot ${BOT_TOKEN}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
+        }
+
+        const channel = await response.json();
+        const channelName = channel.name || '';
+
+        // Extract emoji from channel name
+        let status = {
+            emoji: '',
+            color: 'yellow' // default color
+        };
+
+        // Check for status emojis in channel name
+        if (channelName.includes('🟢')) {
+            status.emoji = '🟢';
+            status.color = 'green';
+        } else if (channelName.includes('🔴')) {
+            status.emoji = '🔴';
+            status.color = 'red';
+        } else if (channelName.includes('🟡')) {
+            status.emoji = '🟡';
+            status.color = 'yellow';
+        }
+
+        res.json({
+            status: status.emoji || '⚫',
+            color: status.color,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Error fetching live status:', error);
+        res.status(500).json({
+            error: 'Failed to fetch status',
+            message: error.message
+        });
+    }
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
