@@ -673,8 +673,6 @@ app.use('/api/*', (req, res) => {
 });
 
 // Serve static files for non-API routes
-app.use(express.static('.'));
-
 // Proxy endpoint to fetch config file content from Discord CDN, with caching
 app.get('/api/config-content', async (req, res) => {
     try {
@@ -713,6 +711,8 @@ app.get('/api/config-content', async (req, res) => {
         res.status(500).json({ error: 'Internal server error', message: err.message });
     }
 });
+
+app.use(express.static('.'));
 
 // Final catch-all for 404s
 app.use((req, res) => {
