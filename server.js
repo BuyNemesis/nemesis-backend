@@ -734,4 +734,20 @@ app.use(express.static('.'));
 // Final catch-all for 404s
 app.use((req, res) => {
     console.log('⚠️ 404 Not Found:', req.method, req.url);
-    res.status(404).send('
+    res.status(404).send('404 Not Found');
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`🚀 Discord Reviews API running on port ${PORT}`);
+    console.log(`📝 Reviews Channel ID: ${CHANNEL_ID}`);
+    console.log(`🎬 Buyer Media Channel ID: ${BUYER_MEDIA_CHANNEL_ID}`);
+    console.log(`📋 Configs Channel ID: ${CONFIGS_CHANNEL_ID}`);
+    console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+    console.log(`📝 Reviews endpoint: http://localhost:${PORT}/api/reviews`);
+    console.log(`🎥 Media endpoint: http://localhost:${PORT}/api/media`);
+    console.log(`📁 Configs endpoint: http://localhost:${PORT}/api/configs`);
+    console.log(`📦 Config content endpoint: http://localhost:${PORT}/api/config-content`);
+    console.log(`🌐 Website: http://localhost:${PORT}/`);
+    console.log('🔒 Bot token loaded securely from environment variables');
+});
