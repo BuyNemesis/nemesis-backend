@@ -696,47 +696,66 @@ app.get('/api/config-content', async (req, res) => {
     }
 });
 
-// Initialize cache on startup
+// Initialize cache on startup (optimized)
 async function initializeCache() {
     try {
         console.log('🔄 Initializing config cache...');
-        const response = await fetch(`https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID}/messages?limit=100`, {
-            headers: {
-                'Authorization': `Bot ${BOT_TOKEN}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
-        }
-
-        const messages = await response.json();
-        let cacheCount = 0;
-
-        for (const msg of messages) {
-            if (msg.attachments) {
-                for (const attachment of msg.attachments) {
-                    if (attachment.filename.toLowerCase().endsWith('.ini')) {
-                        const configResponse = await fetch(attachment.url);
-                        if (configResponse.ok) {
-                            const content = await configResponse.text();
-                            const cacheKey = `${msg.id}_${attachment.filename}`;
-                            const cachePath = path.join(CACHE_DIR, cacheKey);
-                            fs.writeFileSync(cachePath, content, 'utf8');
-                            cacheCount++;
-                        }
+        
+        // Start the server immediately and initialize cache in background
+        setTimeout(async () => {
+            try {
+                const response = await fetch(`https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID}/messages?limit=100`, {
+                    headers: {
+                        'Authorization': `Bot ${BOT_TOKEN}`,
+                        'Content-Type': 'application/json'
                     }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
                 }
+
+                const messages = await response.json();
+                let cacheCount = 0;
+                
+                // Process configs in parallel batches
+                const batchSize = 5;
+                for (let i = 0; i < messages.length; i += batchSize) {
+                    const batch = messages.slice(i, i + batchSize);
+                    await Promise.all(batch.map(async (msg) => {
+                        if (msg.attachments) {
+                            for (const attachment of msg.attachments) {
+                                if (attachment.filename.toLowerCase().endsWith('.ini')) {
+                                    try {
+                                        const configResponse = await fetch(attachment.url);
+                                        if (configResponse.ok) {
+                                            const content = await configResponse.text();
+                                            const cacheKey = `${msg.id}_${attachment.filename}`;
+                                            const cachePath = path.join(CACHE_DIR, cacheKey);
+                                            fs.writeFileSync(cachePath, content, 'utf8');
+                                            cacheCount++;
+                                        }
+                                    } catch (err) {
+                                        console.warn(`⚠️ Failed to cache config ${attachment.filename}:`, err.message);
+                                    }
+                                }
+                            }
+                        }
+                    }));
+                }
+                
+                console.log(`✅ Cache initialized with ${cacheCount} configs`);
+            } catch (error) {
+                console.error('❌ Error during background cache initialization:', error);
             }
-        }
-        console.log(`✅ Cache initialized with ${cacheCount} configs`);
+        }, 0);
+        
     } catch (error) {
         console.error('❌ Error initializing cache:', error);
     }
 }
 
-// Call initializeCache when server starts
+// Start cache initialization in background
 initializeCache();
 
 // Cheat config loading endpoint
@@ -815,7 +834,68 @@ app.get('/api/load-config', async (req, res) => {
     }
 });
 
-// List available cached configs endpoint
+// List available configs with raw URLs
+app.get('/api/config-list', (req, res) => {
+    try {
+        const baseUrl = process.env.BASE_URL || 'https://nemesis-backend-yv3w.onrender.com';
+        
+        const cachedFiles = fs.readdirSync(CACHE_DIR);
+        const configs = cachedFiles.map(filename => {
+            const filepath = path.join(CACHE_DIR, filename);
+            const stats = fs.statSync(filepath);
+            const configId = filename.split('_')[1];
+            
+            return {
+                name: configId,
+                size: stats.size,
+                lastModified: stats.mtime,
+                raw_url: `${baseUrl}/api/raw-config/${configId}`
+            };
+        });
+
+        res.json({
+            configs: configs,
+            total: configs.length
+        });
+    } catch (error) {
+        console.error('Error listing configs:', error);
+        res.status(500).json({ error: 'Failed to list configs', message: error.message });
+    }
+});
+
+// Raw config endpoint that returns only the config content
+app.get('/api/raw-config/:configId', (req, res) => {
+    try {
+        const configId = req.params.configId;
+        const cachedFiles = fs.readdirSync(CACHE_DIR);
+        const requestedConfig = cachedFiles.find(f => f.includes(configId));
+
+        if (!requestedConfig) {
+            return res.status(404).send('Config not found');
+        }
+
+        const configPath = path.join(CACHE_DIR, requestedConfig);
+        const configContent = fs.readFileSync(configPath, 'utf8');
+
+        // Try to parse and pretty print the JSON
+        try {
+            const jsonContent = JSON.parse(configContent);
+            // Set content type to text/plain to preserve formatting
+            res.set('Content-Type', 'text/plain');
+            // Send the prettified JSON with 4 space indentation
+            res.send(JSON.stringify(jsonContent, null, 4));
+        } catch (e) {
+            // If not valid JSON, send raw content
+            res.set('Content-Type', 'text/plain');
+            res.send(configContent);
+        }
+    } catch (error) {
+        console.error('Error serving raw config:', error);
+        res.status(500).send('Internal server error');
+    }
+});
+
+// Original cached-configs endpoint (kept for backward compatibility)
 app.get('/api/cached-configs', (req, res) => {
     try {
         const cachedFiles = fs.readdirSync(CACHE_DIR);
