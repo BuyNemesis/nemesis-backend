@@ -464,7 +464,7 @@ app.post('/api/visit', async (req, res) => {
                     inline: true 
                 },
                 { 
-                    name: '🕒 Time', 
+                    name: '🕐 Time', 
                     value: `<t:${Math.floor(Date.now() / 1000)}:R>`, 
                     inline: true 
                 }
@@ -482,7 +482,7 @@ app.post('/api/visit', async (req, res) => {
         // Add referrer if available
         if (referrer && referrer !== 'direct' && referrer !== 'unknown') {
             embed.fields.push({ 
-                name: '🔗 Referrer', 
+                name: '📋 Referrer', 
                 value: `\`${referrer}\``, 
                 inline: false 
             });
@@ -528,7 +528,7 @@ function getBrowserInfo(userAgent) {
     if (userAgent.includes('Chrome') && !userAgent.includes('Edg')) return '🟢 Chrome';
     if (userAgent.includes('Firefox')) return '🟠 Firefox';
     if (userAgent.includes('Safari') && !userAgent.includes('Chrome')) return '🔵 Safari';
-    if (userAgent.includes('Edg')) return '🟦 Edge';
+    if (userAgent.includes('Edg')) return '🔷 Edge';
     if (userAgent.includes('Opera')) return '🔴 Opera';
     return '❓ Unknown Browser';
 }
@@ -542,49 +542,92 @@ app.get('/health', (req, res) => {
         environment: process.env.NODE_ENV || 'development'
     });
 });
-// Endpoint to count .ini files in the configs channel
+
+// Endpoint to fetch all config files from the configs channel
 app.get('/api/configs', async (req, res) => {
     try {
-        let iniCount = 0;
+        const offset = parseInt(req.query.offset) || 0;
+        const limit = parseInt(req.query.limit) || 12;
+
+        console.log(`Fetching configs from Discord channel ${CONFIGS_CHANNEL_ID}... offset: ${offset}, limit: ${limit}`);
+
+        let allConfigs = [];
         let lastMessageId = undefined;
         let keepFetching = true;
+
+        // Paginate through all messages in the configs channel
         while (keepFetching) {
             let url = `https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID}/messages?limit=100`;
             if (lastMessageId) {
                 url += `&before=${lastMessageId}`;
             }
+
             const response = await fetch(url, {
                 headers: {
                     'Authorization': `Bot ${BOT_TOKEN}`,
                     'Content-Type': 'application/json'
                 }
             });
+
+            if (!response.ok) {
+                throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
+            }
+
             const messages = await response.json();
-            console.log('Fetched messages:', JSON.stringify(messages, null, 2));
+
             if (!Array.isArray(messages) || messages.length === 0) {
+                keepFetching = false;
                 break;
             }
+
+            // Extract .ini files from attachments
             for (const msg of messages) {
                 if (msg.attachments && Array.isArray(msg.attachments)) {
-                    console.log('Message ID:', msg.id, 'Attachments:', msg.attachments);
-                    for (const att of msg.attachments) {
-                        if (att.filename && att.filename.toLowerCase().endsWith('.ini')) {
-                            console.log('Found .ini file:', att.filename);
-                            iniCount++;
+                    for (const attachment of msg.attachments) {
+                        if (attachment.filename && attachment.filename.toLowerCase().endsWith('.ini')) {
+                            allConfigs.push({
+                                filename: attachment.filename,
+                                url: attachment.url,
+                                size: attachment.size || 0,
+                                author: msg.author?.username || 'Unknown',
+                                avatarUrl: msg.author?.avatar 
+                                    ? `https://cdn.discordapp.com/avatars/${msg.author.id}/${msg.author.avatar}.png`
+                                    : null,
+                                date: msg.timestamp,
+                                messageId: msg.id
+                            });
+                            console.log(`Found config: ${attachment.filename} (${attachment.size} bytes) by ${msg.author?.username}`);
                         }
                     }
                 }
             }
+
             if (messages.length < 100) {
                 keepFetching = false;
             } else {
                 lastMessageId = messages[messages.length - 1].id;
             }
         }
-        res.json({ count: iniCount });
+
+        // Sort by date (newest first)
+        allConfigs.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        const totalConfigs = allConfigs.length;
+        const paginatedConfigs = allConfigs.slice(offset, offset + limit);
+
+        console.log(`Found total ${totalConfigs} configs; returning ${paginatedConfigs.length} (offset: ${offset})`);
+
+        res.json({
+            configs: paginatedConfigs,
+            totalCount: totalConfigs,
+            hasMore: offset + limit < totalConfigs
+        });
     } catch (error) {
-        console.error('Error fetching configs:', error);
-        res.status(500).json({ error: 'Failed to fetch configs', message: error.message });
+        console.error('Error fetching configs from Discord:', error);
+        res.status(500).json({
+            error: 'Failed to fetch configs',
+            message: error.message
+        });
     }
 });
 
@@ -601,6 +644,7 @@ app.get('/api/health', (req, res) => {
         },
         bot_token: !!BOT_TOKEN,
         guild_id: process.env.GUILD_ID || '1426384773131010070',
+        configs_channel_id: CONFIGS_CHANNEL_ID,
         buyer_media_channel_id: BUYER_MEDIA_CHANNEL_ID,
         feature_videos_channel_id: process.env.SITE_RELATED_MEDIA || '1427220027232485447',
         timestamp: new Date().toISOString()
@@ -630,11 +674,13 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Discord Reviews API running on port ${PORT}`);
-    console.log(`📺 Reviews Channel ID: ${CHANNEL_ID}`);
+    console.log(`📝 Reviews Channel ID: ${CHANNEL_ID}`);
     console.log(`🎬 Buyer Media Channel ID: ${BUYER_MEDIA_CHANNEL_ID}`);
-    console.log(`🔍 Health check: http://localhost:${PORT}/health`);
+    console.log(`📋 Configs Channel ID: ${CONFIGS_CHANNEL_ID}`);
+    console.log(`🔗 Health check: http://localhost:${PORT}/health`);
     console.log(`📝 Reviews endpoint: http://localhost:${PORT}/api/reviews`);
     console.log(`🎥 Media endpoint: http://localhost:${PORT}/api/media`);
+    console.log(`📁 Configs endpoint: http://localhost:${PORT}/api/configs`);
     console.log(`🌐 Website: http://localhost:${PORT}/`);
     console.log('🔒 Bot token loaded securely from environment variables');
 });
