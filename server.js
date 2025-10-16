@@ -696,6 +696,67 @@ app.get('/api/config-content', async (req, res) => {
     }
 });
 
+// Cheat config loading endpoint
+app.get('/api/load-config', async (req, res) => {
+    try {
+        const configId = req.query.id;
+        
+        if (!configId) {
+            return res.status(400).json({ error: 'Missing config ID parameter' });
+        }
+
+        // List all cached configs
+        const cachedFiles = fs.readdirSync(CACHE_DIR);
+        const requestedConfig = cachedFiles.find(f => f.includes(configId));
+
+        if (!requestedConfig) {
+            return res.status(404).json({ error: 'Config not found in cache' });
+        }
+
+        const configPath = path.join(CACHE_DIR, requestedConfig);
+        const configContent = fs.readFileSync(configPath, 'utf8');
+
+        // Return config content with metadata
+        res.json({
+            success: true,
+            config: {
+                id: configId,
+                filename: requestedConfig,
+                content: configContent,
+                timestamp: fs.statSync(configPath).mtime
+            }
+        });
+    } catch (error) {
+        console.error('Error loading config:', error);
+        res.status(500).json({ error: 'Failed to load config', message: error.message });
+    }
+});
+
+// List available cached configs endpoint
+app.get('/api/cached-configs', (req, res) => {
+    try {
+        const cachedFiles = fs.readdirSync(CACHE_DIR);
+        const configs = cachedFiles.map(filename => {
+            const filepath = path.join(CACHE_DIR, filename);
+            const stats = fs.statSync(filepath);
+            return {
+                id: filename.split('_')[1], // Extract ID from cache filename
+                filename: filename,
+                size: stats.size,
+                lastModified: stats.mtime
+            };
+        });
+
+        res.json({
+            success: true,
+            configs: configs
+        });
+    } catch (error) {
+        console.error('Error listing cached configs:', error);
+        res.status(500).json({ error: 'Failed to list configs', message: error.message });
+    }
+});
+
 // API route health checks
 app.get('/api/health', (req, res) => {
     res.json({
