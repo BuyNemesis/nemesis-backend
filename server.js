@@ -705,70 +705,95 @@ app.get('/health', (req, res) => {
     });
 });
 
-// Endpoint to fetch all config files from the configs channels
-app.get('/api/configs', async (req, res) => {
-    try {
-        const offset = parseInt(req.query.offset) || 0;
-        const limit = parseInt(req.query.limit) || 12;
-        let allConfigs = [];
+// In-memory cache for configs
+let configsCache = {
+    data: [],
+    lastUpdated: 0,
+    updating: false
+};
 
-        // Fetch only from main configs channel
-        try {
-            const response = await fetch(`https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID}/messages?limit=100`, {
-                headers: {
-                    'Authorization': `Bot ${BOT_TOKEN}`,
-                    'Content-Type': 'application/json'
+// Refresh interval in milliseconds (5 minutes)
+const CONFIG_CACHE_REFRESH_INTERVAL = 5 * 60 * 1000;
+
+// Function to refresh configs cache
+async function refreshConfigsCache() {
+    if (configsCache.updating) return;
+    configsCache.updating = true;
+
+    try {
+        const response = await fetch(`https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID}/messages?limit=100`, {
+            headers: {
+                'Authorization': `Bot ${BOT_TOKEN}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch from configs channel');
+        }
+
+        const messages = await response.json();
+        const allConfigs = [];
+
+        if (Array.isArray(messages)) {
+            messages.forEach(msg => {
+                if (msg.attachments && Array.isArray(msg.attachments)) {
+                    msg.attachments.forEach(attachment => {
+                        if (attachment.filename && attachment.filename.toLowerCase().endsWith('.ini')) {
+                            const messageLines = msg.content ? msg.content.trim().split('\n') : [];
+                            const configName = messageLines[0] || attachment.filename.replace(/\.ini$/, '');
+                            const description = messageLines.slice(1).join('\n').trim();
+                            
+                            allConfigs.push({
+                                filename: configName,
+                                description: description || '',
+                                url: attachment.url,
+                                size: attachment.size || 0,
+                                author: msg.author?.username || 'Unknown',
+                                avatarUrl: msg.author?.avatar 
+                                    ? `https://cdn.discordapp.com/avatars/${msg.author.id}/${msg.author.avatar}.png`
+                                    : null,
+                                date: msg.timestamp,
+                                messageId: msg.id
+                            });
+                        }
+                    });
                 }
             });
-
-            if (!response.ok) {
-                throw new Error('Failed to fetch from configs channel');
-            }
-
-            // Get messages from channel
-            const messages = await response.json();
-
-            // Process messages from channel
-            if (Array.isArray(messages)) {
-                messages.forEach(msg => {
-                    if (msg.attachments && Array.isArray(msg.attachments)) {
-                        msg.attachments.forEach(attachment => {
-                            if (attachment.filename && attachment.filename.toLowerCase().endsWith('.ini')) {
-                                // Parse the config name and description from message content
-                                const messageLines = msg.content ? msg.content.trim().split('\n') : [];
-                                const configName = messageLines[0] || attachment.filename.replace(/\.ini$/, '');
-                                const fullDescription = messageLines.slice(1).join('\n').trim();
-                                const description = fullDescription.length > 60 ? 
-                                    fullDescription.substring(0, 60).trim() + '...' : 
-                                    fullDescription;
-                                
-                                allConfigs.push({
-                                    fullDescription,
-                                    filename: configName,
-                                    description: description || '',
-                                    url: attachment.url,
-                                    size: attachment.size || 0,
-                                    author: msg.author?.username || 'Unknown',
-                                    avatarUrl: msg.author?.avatar 
-                                        ? `https://cdn.discordapp.com/avatars/${msg.author.id}/${msg.author.avatar}.png`
-                                        : null,
-                                    date: msg.timestamp,
-                                    messageId: msg.id
-                                });
-                            }
-                        });
-                    }
-                });
-            }
-
-        } catch (fetchError) {
-            console.error('Error fetching configs from channels:', fetchError);
-            throw fetchError;
         }
 
         // Sort by date (newest first)
         allConfigs.sort((a, b) => new Date(b.date) - new Date(a.date));
 
+        // Update cache
+        configsCache.data = allConfigs;
+        configsCache.lastUpdated = Date.now();
+        configsCache.updating = false;
+
+        console.log(`✨ Configs cache refreshed with ${allConfigs.length} items`);
+    } catch (error) {
+        console.error('Error refreshing configs cache:', error);
+        configsCache.updating = false;
+    }
+}
+
+// Setup periodic cache refresh
+setInterval(refreshConfigsCache, CONFIG_CACHE_REFRESH_INTERVAL);
+
+// Endpoint to fetch all config files from the configs channels
+app.get('/api/configs', async (req, res) => {
+    try {
+        const offset = parseInt(req.query.offset) || 0;
+        const limit = parseInt(req.query.limit) || 12;
+
+        // Check if cache needs refresh
+        const now = Date.now();
+        if (now - configsCache.lastUpdated > CONFIG_CACHE_REFRESH_INTERVAL) {
+            await refreshConfigsCache();
+        }
+
+        // Use cached data
+        const allConfigs = configsCache.data;
         const totalConfigs = allConfigs.length;
         const paginatedConfigs = allConfigs.slice(offset, offset + limit);
 
@@ -781,6 +806,24 @@ app.get('/api/configs', async (req, res) => {
         });
     } catch (error) {
         console.error('Error in /api/configs:', error);
+        
+        // If there's an error but we have cached data, return that instead
+        if (configsCache.data.length > 0) {
+            const offset = parseInt(req.query.offset) || 0;
+            const limit = parseInt(req.query.limit) || 12;
+            const totalConfigs = configsCache.data.length;
+            const paginatedConfigs = configsCache.data.slice(offset, offset + limit);
+            
+            console.log(`[FALLBACK] Serving from cache: ${totalConfigs} configs`);
+            
+            return res.json({
+                configs: paginatedConfigs,
+                totalCount: totalConfigs,
+                hasMore: offset + limit < totalConfigs,
+                fromCache: true
+            });
+        }
+
         res.status(500).json({
             error: 'Failed to fetch configs',
             message: error.message
