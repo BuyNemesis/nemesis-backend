@@ -696,6 +696,49 @@ app.get('/api/config-content', async (req, res) => {
     }
 });
 
+// Initialize cache on startup
+async function initializeCache() {
+    try {
+        console.log('🔄 Initializing config cache...');
+        const response = await fetch(`https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID}/messages?limit=100`, {
+            headers: {
+                'Authorization': `Bot ${BOT_TOKEN}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
+        }
+
+        const messages = await response.json();
+        let cacheCount = 0;
+
+        for (const msg of messages) {
+            if (msg.attachments) {
+                for (const attachment of msg.attachments) {
+                    if (attachment.filename.toLowerCase().endsWith('.ini')) {
+                        const configResponse = await fetch(attachment.url);
+                        if (configResponse.ok) {
+                            const content = await configResponse.text();
+                            const cacheKey = `${msg.id}_${attachment.filename}`;
+                            const cachePath = path.join(CACHE_DIR, cacheKey);
+                            fs.writeFileSync(cachePath, content, 'utf8');
+                            cacheCount++;
+                        }
+                    }
+                }
+            }
+        }
+        console.log(`✅ Cache initialized with ${cacheCount} configs`);
+    } catch (error) {
+        console.error('❌ Error initializing cache:', error);
+    }
+}
+
+// Call initializeCache when server starts
+initializeCache();
+
 // Cheat config loading endpoint
 app.get('/api/load-config', async (req, res) => {
     try {
@@ -705,16 +748,55 @@ app.get('/api/load-config', async (req, res) => {
             return res.status(400).json({ error: 'Missing config ID parameter' });
         }
 
-        // List all cached configs
+        // First check cache
         const cachedFiles = fs.readdirSync(CACHE_DIR);
-        const requestedConfig = cachedFiles.find(f => f.includes(configId));
+        let requestedConfig = cachedFiles.find(f => f.includes(configId));
+
+        // If not in cache, try to fetch from Discord and cache it
+        if (!requestedConfig) {
+            console.log(`🔍 Config ${configId} not found in cache, fetching from Discord...`);
+            const response = await fetch(`https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID}/messages?limit=100`, {
+                headers: {
+                    'Authorization': `Bot ${BOT_TOKEN}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                const messages = await response.json();
+                for (const msg of messages) {
+                    if (msg.attachments) {
+                        for (const attachment of msg.attachments) {
+                            if (attachment.filename.toLowerCase().endsWith('.ini') && 
+                                (attachment.filename.includes(configId) || msg.id === configId)) {
+                                const configResponse = await fetch(attachment.url);
+                                if (configResponse.ok) {
+                                    const content = await configResponse.text();
+                                    const cacheKey = `${msg.id}_${attachment.filename}`;
+                                    const cachePath = path.join(CACHE_DIR, cacheKey);
+                                    fs.writeFileSync(cachePath, content, 'utf8');
+                                    requestedConfig = cacheKey;
+                                    console.log(`💾 Cached new config: ${cacheKey}`);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (requestedConfig) break;
+                }
+            }
+        }
 
         if (!requestedConfig) {
-            return res.status(404).json({ error: 'Config not found in cache' });
+            return res.status(404).json({ 
+                error: 'Config not found',
+                message: 'Config not found in cache or Discord channel'
+            });
         }
 
         const configPath = path.join(CACHE_DIR, requestedConfig);
         const configContent = fs.readFileSync(configPath, 'utf8');
+        const stats = fs.statSync(configPath);
 
         // Return config content with metadata
         res.json({
@@ -723,7 +805,8 @@ app.get('/api/load-config', async (req, res) => {
                 id: configId,
                 filename: requestedConfig,
                 content: configContent,
-                timestamp: fs.statSync(configPath).mtime
+                timestamp: stats.mtime,
+                size: stats.size
             }
         });
     } catch (error) {
