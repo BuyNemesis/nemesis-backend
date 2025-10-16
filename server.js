@@ -834,29 +834,20 @@ app.get('/api/load-config', async (req, res) => {
     }
 });
 
-// List available configs with raw URLs
+// List available configs with raw URLs - simplified format
 app.get('/api/config-list', (req, res) => {
     try {
         const baseUrl = process.env.BASE_URL || 'https://nemesis-backend-yv3w.onrender.com';
         
         const cachedFiles = fs.readdirSync(CACHE_DIR);
         const configs = cachedFiles.map(filename => {
-            const filepath = path.join(CACHE_DIR, filename);
-            const stats = fs.statSync(filepath);
             const configId = filename.split('_')[1];
-            
-            return {
-                name: configId,
-                size: stats.size,
-                lastModified: stats.mtime,
-                raw_url: `${baseUrl}/api/raw-config/${configId}`
-            };
+            return `${configId} ${baseUrl}/api/raw-config/${configId}`;
         });
-
-        res.json({
-            configs: configs,
-            total: configs.length
-        });
+        
+        // Send as plain text, one config per line
+        res.set('Content-Type', 'text/plain');
+        res.send(configs.join('\n'));
     } catch (error) {
         console.error('Error listing configs:', error);
         res.status(500).json({ error: 'Failed to list configs', message: error.message });
