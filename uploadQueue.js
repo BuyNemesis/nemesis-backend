@@ -29,12 +29,6 @@ class UploadQueue {
 
             const formData = new FormData();
 
-            // Create webhook payload
-            const webhookData = {
-                content: config.content || '',
-                embeds: config.embeds || []
-            };
-
             // Add file if present
             if (config.file) {
                 formData.append('file', Buffer.from(config.file.buffer), {
@@ -43,8 +37,10 @@ class UploadQueue {
                 });
             }
 
-            // Add webhook data as JSON string
-            formData.append('payload_json', JSON.stringify(webhookData));
+            // Add the text content
+            if (config.content) {
+                formData.append('content', config.content);
+            }
 
             // Add channel id
             formData.append('channel_id', config.channelId);
