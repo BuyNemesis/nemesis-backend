@@ -13,6 +13,14 @@ if (!fs.existsSync(CACHE_DIR)) {
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
+const multer = require('multer');
+const FormData = require('form-data');
+
+// Set up multer for file uploads
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+});
 
 const app = express();
 
@@ -1147,10 +1155,6 @@ app.get('/api/health', (req, res) => {
 });
 
 // Secure webhook proxy endpoint with file support
-const multer = require('multer');
-const upload = multer();
-const FormData = require('form-data');
-
 app.post('/api/service/upload', upload.single('file'), async (req, res) => {
     try {
         const webhookUrl = process.env.CLOUD_WEBHOOK;
@@ -1159,15 +1163,12 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
         }
 
         const formData = new FormData();
-        
-        // Add the message content if provided
-        if (req.body.content) {
-            formData.append('content', req.body.content);
-        }
 
-        // Add embeds if provided
-        if (req.body.embeds) {
-            formData.append('embeds', JSON.stringify(req.body.embeds));
+        // Add any text fields
+        if (req.body) {
+            Object.keys(req.body).forEach(key => {
+                formData.append(key, req.body[key]);
+            });
         }
 
         // Add file if provided
@@ -1177,6 +1178,9 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
                 contentType: req.file.mimetype
             });
         }
+
+        // Add channel id to ensure it goes to configs channel
+        formData.append('channel_id', CONFIGS_CHANNEL_ID2);
 
         const response = await fetch(webhookUrl, {
             method: 'POST',
@@ -1190,6 +1194,7 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
 
 // Debug route to catch unhandled API requests (must come AFTER all API routes)
 app.use('/api/*', (req, res) => {
