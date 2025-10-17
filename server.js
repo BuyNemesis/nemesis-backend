@@ -1159,42 +1159,17 @@ app.get('/api/health', (req, res) => {
     });
 });
 
+// Import the upload queue
+const uploadQueue = require('./uploadQueue');
+
 // Secure webhook proxy endpoint with file support
 app.post('/api/service/upload', upload.single('file'), async (req, res) => {
     try {
-        const webhookUrl = process.env.CLOUD_WEBHOOK;
-        if (!webhookUrl) {
+        if (!process.env.CLOUD_WEBHOOK) {
             return res.status(500).json({ error: 'Webhook not configured' });
         }
 
-        const formData = new FormData();
-        
-        // Security: Only allow specific fields
-        const allowedFields = ['content', 'embeds'];
-        if (req.body) {
-            Object.keys(req.body).forEach(key => {
-                if (allowedFields.includes(key)) {
-                    // Validate content length
-                    if (key === 'content' && req.body[key].length > 2000) {
-                        return res.status(400).json({ error: 'Content too long' });
-                    }
-                    // Validate embeds
-                    if (key === 'embeds') {
-                        try {
-                            const embeds = JSON.parse(req.body[key]);
-                            if (!Array.isArray(embeds) || embeds.length > 1) {
-                                return res.status(400).json({ error: 'Invalid embeds format' });
-                            }
-                        } catch (e) {
-                            return res.status(400).json({ error: 'Invalid embeds format' });
-                        }
-                    }
-                    formData.append(key, req.body[key]);
-                }
-            });
-        }
-
-        // Validate and add file
+        // Validate request
         if (req.file) {
             // Only allow .ini files
             if (!req.file.originalname.toLowerCase().endsWith('.ini')) {
@@ -1204,33 +1179,45 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
             if (req.file.size > 1024 * 1024) {
                 return res.status(400).json({ error: 'File too large' });
             }
-            formData.append('file', req.file.buffer, {
-                filename: req.file.originalname,
-                contentType: 'text/plain'
-            });
         }
 
-        // Add channel id to ensure it goes to configs channel
-        formData.append('channel_id', CONFIGS_CHANNEL_ID2);
+        // Validate content and embeds
+        if (req.body) {
+            if (req.body.content && req.body.content.length > 2000) {
+                return res.status(400).json({ error: 'Content too long' });
+            }
+            if (req.body.embeds) {
+                try {
+                    const embeds = JSON.parse(req.body.embeds);
+                    if (!Array.isArray(embeds) || embeds.length > 1) {
+                        return res.status(400).json({ error: 'Invalid embeds format' });
+                    }
+                } catch (e) {
+                    return res.status(400).json({ error: 'Invalid embeds format' });
+                }
+            }
+        }
 
-        const response = await fetch(webhookUrl, {
-            method: 'POST',
-            body: formData
+        // Add to upload queue
+        await uploadQueue.add({
+            file: req.file,
+            content: req.body?.content,
+            embeds: req.body?.embeds,
+            channelId: CONFIGS_CHANNEL_ID2
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('Discord webhook error:', response.status, errorText);
-            return res.status(response.status).json({ 
-                error: 'Discord webhook error',
-                status: response.status
-            });
-        }
+        return res.json({ 
+            success: true, 
+            message: 'Config queued for upload', 
+            queueTime: new Date().toISOString() 
+        });
 
-        res.json({ success: true, message: 'Config uploaded successfully' });
     } catch (error) {
-        console.error('Error forwarding to webhook:', error);
-        res.status(500).json({ error: error.message });
+        console.error('Error queueing config upload:', error);
+        return res.status(500).json({ 
+            error: 'Failed to queue config upload',
+            message: error.message 
+        });
     }
 });
 
