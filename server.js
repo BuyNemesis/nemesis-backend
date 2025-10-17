@@ -1146,6 +1146,51 @@ app.get('/api/health', (req, res) => {
     });
 });
 
+// Secure webhook proxy endpoint with file support
+const multer = require('multer');
+const upload = multer();
+const FormData = require('form-data');
+
+app.post('/api/service/upload', upload.single('file'), async (req, res) => {
+    try {
+        const webhookUrl = process.env.CLOUD_WEBHOOK;
+        if (!webhookUrl) {
+            return res.status(500).json({ error: 'Webhook not configured' });
+        }
+
+        const formData = new FormData();
+        
+        // Add the message content if provided
+        if (req.body.content) {
+            formData.append('content', req.body.content);
+        }
+
+        // Add embeds if provided
+        if (req.body.embeds) {
+            formData.append('embeds', JSON.stringify(req.body.embeds));
+        }
+
+        // Add file if provided
+        if (req.file) {
+            formData.append('file', req.file.buffer, {
+                filename: req.file.originalname,
+                contentType: req.file.mimetype
+            });
+        }
+
+        const response = await fetch(webhookUrl, {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+        res.json(result);
+    } catch (error) {
+        console.error('Error forwarding to webhook:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Debug route to catch unhandled API requests (must come AFTER all API routes)
 app.use('/api/*', (req, res) => {
     console.log('⚠️ Unhandled API request:', req.method, req.url);
