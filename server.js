@@ -24,8 +24,13 @@ const upload = multer({
 
 const app = express();
 
-// CORS middleware
-app.use(cors());
+// CORS middleware with file upload support
+app.use(cors({
+    origin: ['http://localhost:3000', 'https://nemesis.cc', 'http://127.0.0.1:5500', 'file://', '*'],
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type'],
+    credentials: true
+}));
 app.use(express.json());
 
 // Request logging middleware
