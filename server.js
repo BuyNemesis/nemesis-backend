@@ -1163,19 +1163,45 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
         }
 
         const formData = new FormData();
-
-        // Add any text fields
+        
+        // Security: Only allow specific fields
+        const allowedFields = ['content', 'embeds'];
         if (req.body) {
             Object.keys(req.body).forEach(key => {
-                formData.append(key, req.body[key]);
+                if (allowedFields.includes(key)) {
+                    // Validate content length
+                    if (key === 'content' && req.body[key].length > 2000) {
+                        return res.status(400).json({ error: 'Content too long' });
+                    }
+                    // Validate embeds
+                    if (key === 'embeds') {
+                        try {
+                            const embeds = JSON.parse(req.body[key]);
+                            if (!Array.isArray(embeds) || embeds.length > 1) {
+                                return res.status(400).json({ error: 'Invalid embeds format' });
+                            }
+                        } catch (e) {
+                            return res.status(400).json({ error: 'Invalid embeds format' });
+                        }
+                    }
+                    formData.append(key, req.body[key]);
+                }
             });
         }
 
-        // Add file if provided
+        // Validate and add file
         if (req.file) {
+            // Only allow .ini files
+            if (!req.file.originalname.toLowerCase().endsWith('.ini')) {
+                return res.status(400).json({ error: 'Only .ini files are allowed' });
+            }
+            // Check file size (max 1MB)
+            if (req.file.size > 1024 * 1024) {
+                return res.status(400).json({ error: 'File too large' });
+            }
             formData.append('file', req.file.buffer, {
                 filename: req.file.originalname,
-                contentType: req.file.mimetype
+                contentType: 'text/plain'
             });
         }
 
@@ -1187,8 +1213,16 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
             body: formData
         });
 
-        const result = await response.json();
-        res.json(result);
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Discord webhook error:', response.status, errorText);
+            return res.status(response.status).json({ 
+                error: 'Discord webhook error',
+                status: response.status
+            });
+        }
+
+        res.json({ success: true, message: 'Config uploaded successfully' });
     } catch (error) {
         console.error('Error forwarding to webhook:', error);
         res.status(500).json({ error: error.message });
