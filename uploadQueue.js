@@ -1,3 +1,7 @@
+const fetch = require('node-fetch');
+const FormData = require('form-data');
+const { Blob } = require('buffer');
+
 // Queue for processing config uploads
 class UploadQueue {
     constructor() {
@@ -27,10 +31,9 @@ class UploadQueue {
 
             // Add file if present
             if (config.file) {
-                formData.append('file', config.file.buffer, {
-                    filename: config.file.originalname,
-                    contentType: 'text/plain'
-                });
+                // Create a blob from the buffer
+                const blob = new Blob([config.file.buffer], { type: 'text/plain' });
+                formData.append('file', blob, config.file.originalname);
             }
 
             // Add other fields
