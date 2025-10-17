@@ -31,9 +31,10 @@ class UploadQueue {
 
             // Add file if present
             if (config.file) {
-                // Create a blob from the buffer
-                const blob = new Blob([config.file.buffer], { type: 'text/plain' });
-                formData.append('file', blob, config.file.originalname);
+                formData.append('file', Buffer.from(config.file.buffer), {
+                    filename: config.file.originalname,
+                    contentType: 'text/plain'
+                });
             }
 
             // Add other fields
