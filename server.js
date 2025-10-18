@@ -4,11 +4,52 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 
-// Ensure cache directory exists
-const CACHE_DIR = path.join(__dirname, 'config_cache');
-if (!fs.existsSync(CACHE_DIR)) {
-    fs.mkdirSync(CACHE_DIR);
+// Define storage paths
+const MOUNT_PATH = '/mnt/nemesis_storage';
+const CACHE_DIR = process.env.NODE_ENV === 'production' ? MOUNT_PATH : path.join(__dirname, 'config_cache');
+const LOCAL_CACHE_DIR = path.join(__dirname, 'config_cache');
+
+// Helper function to ensure storage is accessible
+async function ensureStorageAccess() {
+    try {
+        // In production, use mounted network storage
+        if (process.env.NODE_ENV === 'production') {
+            if (!fs.existsSync(MOUNT_PATH)) {
+                console.error('❌ Network storage mount point not found:', MOUNT_PATH);
+                throw new Error('Network storage not mounted');
+            }
+            // Test write access
+            const testFile = path.join(MOUNT_PATH, '.test');
+            fs.writeFileSync(testFile, 'test');
+            fs.unlinkSync(testFile);
+            console.log('✅ Connected to network storage:', MOUNT_PATH);
+            return true;
+        }
+        
+        // In development, use local storage
+        if (!fs.existsSync(LOCAL_CACHE_DIR)) {
+            fs.mkdirSync(LOCAL_CACHE_DIR, { recursive: true });
+        }
+        console.log('📂 Using local storage:', LOCAL_CACHE_DIR);
+        return false;
+    } catch (error) {
+        console.error('❌ Storage access error:', error.message);
+        console.log('⚠️ Falling back to local storage');
+        
+        // Fallback to local storage
+        if (!fs.existsSync(LOCAL_CACHE_DIR)) {
+            fs.mkdirSync(LOCAL_CACHE_DIR, { recursive: true });
+        }
+        return false;
+    }
 }
+
+// Initialize storage
+ensureStorageAccess().then(usingNetwork => {
+    if (!usingNetwork) {
+        console.log('📂 Using local storage:', LOCAL_CACHE_DIR);
+    }
+});
 
 const express = require('express');
 const cors = require('cors');
