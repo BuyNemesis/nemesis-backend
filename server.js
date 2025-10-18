@@ -1181,9 +1181,6 @@ app.get('/api/load-config', async (req, res) => {
             });
         }
 
-        const configPath = path.join(CACHE_DIR, requestedConfig);
-        const configContent = fs.readFileSync(configPath, 'utf8');
-
         // Try to parse and pretty print the JSON
         try {
             const jsonContent = JSON.parse(configContent);
@@ -1232,9 +1229,6 @@ app.get('/api/raw-config/:configId', (req, res) => {
         if (!requestedConfig) {
             return res.status(404).send('Config not found');
         }
-
-        const configPath = path.join(CACHE_DIR, requestedConfig);
-        const configContent = fs.readFileSync(configPath, 'utf8');
 
         // Try to parse and pretty print the JSON
         try {
