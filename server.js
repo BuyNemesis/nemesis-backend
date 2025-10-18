@@ -24,6 +24,9 @@ async function storageApi(method, path, body = null, retries = 3) {
         throw new Error('Storage API is currently unavailable');
     }
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
     for (let i = 0; i < retries; i++) {
         try {
             const options = {
@@ -31,7 +34,7 @@ async function storageApi(method, path, body = null, retries = 3) {
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                timeout: 5000 // 5 second timeout
+                signal: controller.signal
             };
             if (body) {
                 options.body = JSON.stringify(body);
@@ -41,6 +44,7 @@ async function storageApi(method, path, body = null, retries = 3) {
             console.log(`📡 Storage API Request: ${method} ${fullUrl}`);
             
             const response = await fetch(fullUrl, options);
+            clearTimeout(timeoutId);
             
             // For non-200 responses, throw error with details
             if (!response.ok) {
@@ -56,12 +60,21 @@ async function storageApi(method, path, body = null, retries = 3) {
             
             return data;
         } catch (error) {
-            console.error(`❌ Storage API attempt ${i + 1}/${retries} failed:`, error);
+            clearTimeout(timeoutId);
+            
+            // Handle specific error types
+            if (error.name === 'AbortError') {
+                console.error(`❌ Storage API request timed out after 5 seconds`);
+            } else if (error.code === 'ECONNREFUSED' || error.code === 'UND_ERR_CONNECT_TIMEOUT') {
+                console.error(`❌ Storage API connection failed - server may be down`);
+            } else {
+                console.error(`❌ Storage API attempt ${i + 1}/${retries} failed:`, error);
+            }
             
             // On final retry, mark storage as unavailable
             if (i === retries - 1) {
                 storageApiAvailable = false;
-                throw error;
+                throw new Error('Storage API is unreachable after multiple attempts');
             }
             
             // Wait before retry (exponential backoff)
@@ -89,6 +102,8 @@ const memoryCache = {
 // Helper function to ensure storage API is accessible
 async function ensureStorageAccess() {
     try {
+        console.log('🔄 Testing storage API connectivity...');
+        
         // Test storage API connectivity
         await storageApi('GET', '/health');
         console.log('✅ Storage API is accessible');
@@ -99,10 +114,13 @@ async function ensureStorageAccess() {
         });
         
         console.log('✅ Storage directories initialized');
+        storageApiAvailable = true;
         return true;
     } catch (error) {
         console.error('❌ Storage API error:', error.message);
-        throw error; // In production, we want to fail if storage is not accessible
+        console.log('⚠️ Falling back to Discord storage only');
+        storageApiAvailable = false;
+        return false;
     }
 }
 
