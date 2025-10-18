@@ -3,7 +3,7 @@ services:
     name: nemesis-backend
     env: node
     buildCommand: npm install
-    startCommand: mkdir -p storage/media storage/config && node server.js
+    startCommand: mkdir -p /opt/render/project/src/storage/media /opt/render/project/src/storage/config && node server.js
     envVars:
       - key: NODE_ENV
         value: production
