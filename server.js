@@ -6,10 +6,10 @@ const path = require('path');
 
 // Define storage paths
 const MOUNT_PATH_MEDIA = process.env.NODE_ENV === 'production' 
-    ? '/opt/render/project/src/storage/media'
+    ? '/mnt/storage/media'  // Production Samba mount point
     : path.join(__dirname, 'storage/media');
 const MOUNT_PATH_CONFIG = process.env.NODE_ENV === 'production'
-    ? '/opt/render/project/src/storage/config'
+    ? '/mnt/storage/config'  // Production Samba mount point
     : path.join(__dirname, 'storage/config');
 const CACHE_DIR = MOUNT_PATH_CONFIG;  // Use the config storage path for cache
 const LOCAL_CACHE_DIR = path.join(__dirname, 'storage/config');

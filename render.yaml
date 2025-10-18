@@ -3,10 +3,12 @@ services:
     name: nemesis-backend
     env: node
     buildCommand: npm install
-    startCommand: mkdir -p /opt/render/project/src/storage/media /opt/render/project/src/storage/config && node server.js
+    startCommand: apt-get update && apt-get install -y cifs-utils && bash mount-storage.sh && node server.js
     envVars:
       - key: NODE_ENV
         value: production
+      - key: SAMBA_PASSWORD
+        sync: false  # Makes this a secret environment variable
     rootDirectory: .
     # Note: Additional environment variables must be configured in render.com dashboard:
     # - SAMBA_PASSWORD (if not using inline password in script)
