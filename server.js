@@ -3,7 +3,9 @@ require('dotenv').config();
 
 const fs = require('fs');
 const path = require('path');
-const fetch = require('node-fetch');
+
+// Use built-in fetch for Node.js >=18 or node-fetch for older versions
+const fetch = globalThis.fetch || require('node-fetch');
 
 // Storage API configuration
 const STORAGE_API = process.env.STORAGE_API_URL || (
@@ -113,7 +115,6 @@ ensureStorageAccess().catch(error => {
 
 const express = require('express');
 const cors = require('cors');
-const fetch = require('node-fetch');
 const multer = require('multer');
 const FormData = require('form-data');
 
