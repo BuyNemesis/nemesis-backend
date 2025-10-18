@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: nemesis-backend
+    env: node
+    buildCommand: npm install
+    startCommand: mkdir -p storage/media storage/config && node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+    rootDirectory: .
+    # Note: Additional environment variables must be configured in render.com dashboard:
+    # - SAMBA_PASSWORD (if not using inline password in script)
+    # - BOT_TOKEN
+    # - Other sensitive credentials
