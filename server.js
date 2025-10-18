@@ -26,9 +26,26 @@ const app = express();
 
 // CORS middleware with file upload support
 app.use(cors({
-    origin: ['http://localhost:3000', 'https://nemesis.cc', 'http://127.0.0.1:5500', 'file://', '*'],
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type'],
+    origin: function(origin, callback) {
+        // Allow requests with no origin (like mobile apps, curl, Postman)
+        if (!origin) return callback(null, true);
+        
+        // Allow localhost on any port
+        if (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')) {
+            return callback(null, true);
+        }
+        
+        // Allow production domains
+        const allowedDomains = ['https://nemesis.cc', 'https://www.nemesis.cc'];
+        if (allowedDomains.includes(origin)) {
+            return callback(null, true);
+        }
+        
+        // Allow any other origin (for development/testing)
+        callback(null, true);
+    },
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
     credentials: true
 }));
 app.use(express.json());
@@ -236,65 +253,90 @@ app.get('/api/reviews', async (req, res) => {
         const offset = parseInt(req.query.offset) || 0;
         const limit = parseInt(req.query.limit) || 6;
         console.log(`Fetching reviews from Discord... offset: ${offset}, limit: ${limit}`);
+        
         const response = await fetch(`https://discord.com/api/v10/channels/${REVIEWS_CHANNEL_ID}/messages?limit=100`, {
             headers: {
                 'Authorization': `Bot ${BOT_TOKEN}`,
                 'Content-Type': 'application/json'
             }
         });
+        
         if (!response.ok) {
-            throw new Error(`Discord API error: ${response.status} ${response.statusText}`);
+            console.error(`Discord API error: Status ${response.status}`);
+            throw new Error('Failed to fetch reviews from Discord');
         }
+        
         const messages = await response.json();
         console.log(`Fetched ${messages.length} messages`);
+        
+        if (!Array.isArray(messages)) {
+            console.error('Invalid response from Discord: not an array');
+            throw new Error('Invalid response from Discord');
+        }
+        
         // Parse messages in the format: first line = review, second line = rating
         const allValidReviews = messages
             .filter(msg => {
-                if (!msg.content || msg.author.bot) {
-                    console.log('Filtered out:', msg.author.bot ? 'bot message' : 'no content');
+                // Must have content and not be from a bot
+                if (!msg.content || !msg.author || msg.author.bot) {
                     return false;
                 }
+                
                 const lines = msg.content.trim().split('\n');
+                // Must have at least 2 lines and second line must contain a rating
                 return lines.length >= 2 && lines[1].includes('/5');
             })
             .map(msg => {
                 const lines = msg.content.trim().split('\n');
                 const reviewText = lines[0];
                 const ratingLine = lines[1];
-                // Extract rating (e.g., "4/5" -> 4, "0/5" -> 0)
+                
+                // Extract rating (e.g., "4/5" -> 4)
                 const ratingMatch = ratingLine.match(/(\d+)\/5/);
-                const rating = ratingMatch ? parseInt(ratingMatch[1]) : null;
-                if (rating === null || rating < 0) {
+                if (!ratingMatch) {
                     return null;
                 }
+                
+                const rating = parseInt(ratingMatch[1], 10);
+                if (isNaN(rating) || rating < 0 || rating > 5) {
+                    return null;
+                }
+                
                 return {
                     id: msg.id,
                     author: {
-                        username: msg.author.username,
+                        username: msg.author.username || 'Anonymous',
                         avatar: msg.author.avatar ? 
                             `https://cdn.discordapp.com/avatars/${msg.author.id}/${msg.author.avatar}.png` :
-                            `https://cdn.discordapp.com/embed/avatars/${msg.author.discriminator % 5}.png`
+                            `https://cdn.discordapp.com/embed/avatars/${(msg.author.discriminator || 0) % 5}.png`
                     },
-                    content: reviewText,
-                    rating: Math.min(rating, 5),
+                    content: reviewText.trim(),
+                    rating: rating,
                     timestamp: msg.timestamp
                 };
             })
             .filter(review => review !== null)
             .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
         const totalReviews = allValidReviews.length;
         const paginatedReviews = allValidReviews.slice(offset, offset + limit);
-        console.log(`Parsed ${totalReviews} valid reviews, returning ${paginatedReviews.length} (offset: ${offset})`);
+        
+        console.log(`Found ${totalReviews} valid reviews, returning ${paginatedReviews.length} reviews (offset: ${offset})`);
+        
+        // Send the response with reviews array, even if empty
         res.json({
             reviews: paginatedReviews,
             totalCount: totalReviews,
             hasMore: offset + limit < totalReviews
         });
+        
     } catch (error) {
-        console.error('Error fetching Discord messages:', error);
+        console.error('Error in /api/reviews:', error);
+        // Send a more detailed error response
         res.status(500).json({
             error: 'Failed to fetch reviews',
-            message: error.message
+            message: error.message,
+            timestamp: new Date().toISOString()
         });
     }
 });
@@ -739,11 +781,11 @@ app.get('/api/live-status', async (req, res) => {
         
         // Map emoji to status info
         const statusMap = {
-            '🟢': { color: 'green', text: 'Online' },
-            '🔴': { color: 'red', text: 'Offline' },
-            '🟡': { color: 'yellow', text: 'Maintenance' },
-            '🔵': { color: 'blue', text: 'Updating' },
-            '⚫': { color: 'gray', text: 'Unknown' }
+            '🟢': { color: 'green', text: 'Online', format: 'Online' },
+            '🔴': { color: 'red', text: 'Offline', format: 'Offline' },
+            '🟡': { color: 'yellow', text: 'Maintenance', format: 'Under Maintenance' },
+            '🔵': { color: 'blue', text: 'Updating', format: 'Updating' },
+            '⚫': { color: 'gray', text: 'Unknown', format: 'Status Unknown' }
         };
 
         const status = statusMap[emoji] || statusMap['⚫'];
@@ -751,7 +793,8 @@ app.get('/api/live-status', async (req, res) => {
         res.json({
             emoji: emoji,
             color: status.color,
-            text: status.text
+            text: status.text,
+            format: status.format
         });
     } catch (error) {
         console.error('Error fetching live status:', error);
