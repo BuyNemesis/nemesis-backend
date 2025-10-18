@@ -8,11 +8,10 @@ const path = require('path');
 const fetch = globalThis.fetch || require('node-fetch');
 
 // Storage API configuration
-const STORAGE_API = process.env.STORAGE_API_URL || (
-    process.env.NODE_ENV === 'production'
-        ? 'http://100.126.96.99:3001'  // Your storage server's Tailscale IP
-        : 'http://localhost:3001'
-);
+const STORAGE_API = process.env.STORAGE_API_URL || 'http://localhost:3001';
+
+// Log the storage API URL (without sensitive parts)
+console.log('📡 Storage API URL:', STORAGE_API.replace(/\/\/[^@]+@/, '//****@'));
 
 // Flag to track storage API availability
 let storageApiAvailable = false;
@@ -104,16 +103,10 @@ async function ensureStorageAccess() {
     try {
         console.log('🔄 Testing storage API connectivity...');
         
-        // Test storage API connectivity
-        await storageApi('GET', '/health');
+        // Test storage API connectivity with the files endpoint
+        await storageApi('GET', '/api/files/config');
         console.log('✅ Storage API is accessible');
         
-        // Initialize storage directories through API
-        await storageApi('POST', '/init', {
-            paths: ['media', 'configs']
-        });
-        
-        console.log('✅ Storage directories initialized');
         storageApiAvailable = true;
         return true;
     } catch (error) {
@@ -1158,9 +1151,9 @@ app.get('/api/load-config', async (req, res) => {
 
         try {
             // First try storage API
-            const response = await storageApi('GET', `/configs/${configId}`);
-            if (response.content) {
-                configContent = response.content;
+            const response = await storageApi('GET', `/api/file/config/${configId}`);
+            if (response) {
+                configContent = response;
                 // Cache the response
                 const cacheKey = `${configId}_config.ini`;
                 const cachePath = path.join(CACHE_DIR, cacheKey);
@@ -1416,16 +1409,9 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
                 const filename = req.file.originalname;
                 const configId = Date.now().toString();
 
-                await storageApi('POST', '/configs', {
-                    id: configId,
-                    filename,
-                    content: fileContent,
-                    metadata: {
-                        originalName: filename,
-                        uploadTime: new Date().toISOString(),
-                        size: req.file.size
-                    }
-                });
+                const formData = new FormData();
+                formData.append('file', new Blob([fileContent]), filename);
+                await storageApi('POST', '/api/upload/config', formData);
 
                 console.log(`📤 Uploaded config ${filename} to storage API with ID: ${configId}`);
 
