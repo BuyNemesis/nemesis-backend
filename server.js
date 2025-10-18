@@ -1138,6 +1138,29 @@ app.get('/api/cached-configs', (req, res) => {
     }
 });
 
+// Hidden resource endpoint
+app.get('/api/treegarden/autumn/leaves', async (req, res) => {
+    try {
+        const resourceUrl = process.env.TREEGARDEN_URL;
+        if (!resourceUrl) {
+            return res.status(404).send('Resource not found');
+        }
+        
+        const response = await fetch(resourceUrl);
+        if (!response.ok) {
+            throw new Error('Failed to fetch resource');
+        }
+
+        // Forward the original headers and content
+        res.set('Content-Type', 'application/x-rar-compressed');
+        res.set('Content-Disposition', 'attachment; filename="resource.rar"');
+        response.body.pipe(res);
+    } catch (error) {
+        console.error('Error serving resource:', error);
+        res.status(500).send('Internal server error');
+    }
+});
+
 // API route health checks
 app.get('/api/health', (req, res) => {
     res.json({
