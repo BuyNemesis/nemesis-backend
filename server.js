@@ -5,8 +5,9 @@ const fs = require('fs');
 const path = require('path');
 
 // Define storage paths
-const MOUNT_PATH = '/mnt/nemesis_storage';
-const CACHE_DIR = process.env.NODE_ENV === 'production' ? MOUNT_PATH : path.join(__dirname, 'config_cache');
+const MOUNT_PATH_MEDIA = '/home/cayden/nemesis/media';
+const MOUNT_PATH_CONFIG = '/home/cayden/nemesis/config';
+const CACHE_DIR = process.env.NODE_ENV === 'production' ? MOUNT_PATH_CONFIG : path.join(__dirname, 'config_cache');
 const LOCAL_CACHE_DIR = path.join(__dirname, 'config_cache');
 
 // Helper function to ensure storage is accessible
@@ -14,15 +15,25 @@ async function ensureStorageAccess() {
     try {
         // In production, use mounted network storage
         if (process.env.NODE_ENV === 'production') {
-            if (!fs.existsSync(MOUNT_PATH)) {
-                console.error('❌ Network storage mount point not found:', MOUNT_PATH);
-                throw new Error('Network storage not mounted');
+            // Check media storage
+            if (!fs.existsSync(MOUNT_PATH_MEDIA)) {
+                console.error('❌ Media storage path not found:', MOUNT_PATH_MEDIA);
+                throw new Error('Media storage not accessible');
             }
-            // Test write access
-            const testFile = path.join(MOUNT_PATH, '.test');
-            fs.writeFileSync(testFile, 'test');
-            fs.unlinkSync(testFile);
-            console.log('✅ Connected to network storage:', MOUNT_PATH);
+            // Check config storage
+            if (!fs.existsSync(MOUNT_PATH_CONFIG)) {
+                console.error('❌ Config storage path not found:', MOUNT_PATH_CONFIG);
+                throw new Error('Config storage not accessible');
+            }
+            // Test write access to both paths
+            const testFileMedia = path.join(MOUNT_PATH_MEDIA, '.test');
+            const testFileConfig = path.join(MOUNT_PATH_CONFIG, '.test');
+            fs.writeFileSync(testFileMedia, 'test');
+            fs.writeFileSync(testFileConfig, 'test');
+            fs.unlinkSync(testFileMedia);
+            fs.unlinkSync(testFileConfig);
+            console.log('✅ Connected to media storage:', MOUNT_PATH_MEDIA);
+            console.log('✅ Connected to config storage:', MOUNT_PATH_CONFIG);
             return true;
         }
         
