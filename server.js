@@ -4,58 +4,90 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 
-// Define storage paths
-const MOUNT_PATH_MEDIA = process.env.NODE_ENV === 'production' 
-    ? '/mnt/storage/media'  // Production Samba mount point
-    : path.join(__dirname, 'storage/media');
-const MOUNT_PATH_CONFIG = process.env.NODE_ENV === 'production'
-    ? '/mnt/storage/config'  // Production Samba mount point
-    : path.join(__dirname, 'storage/config');
-const CACHE_DIR = MOUNT_PATH_CONFIG;  // Use the config storage path for cache
-const LOCAL_CACHE_DIR = path.join(__dirname, 'storage/config');
+// Storage API configuration
+const STORAGE_API = process.env.STORAGE_API_URL || (
+    process.env.NODE_ENV === 'production'
+        ? 'http://100.126.96.99:3001'  // Your storage server's Tailscale IP
+        : 'http://localhost:3001'
+);
 
-// Helper function to ensure storage is accessible
+// Helper function for storage operations with retries
+async function storageApi(method, path, body = null, retries = 3) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            const options = {
+                method,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            };
+            if (body) {
+                options.body = JSON.stringify(body);
+            }
+            
+            const fullUrl = `${STORAGE_API}${path}`;
+            console.log(`📡 Storage API Request: ${method} ${fullUrl}`);
+            
+            const response = await fetch(fullUrl, options);
+            
+            // For non-200 responses, throw error with details
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Storage API error: ${response.status} - ${errorText}`);
+            }
+
+            const data = await response.json();
+            console.log(`✅ Storage API Success: ${method} ${path}`);
+            return data;
+        } catch (error) {
+            console.error(`❌ Storage API attempt ${i + 1}/${retries} failed:`, error);
+            if (i === retries - 1) throw error;
+            // Wait before retry (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+        }
+    }
+}
+
+// Use local cache for temporary storage
+const CACHE_DIR = path.join(__dirname, 'cache');
+if (!fs.existsSync(CACHE_DIR)) {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
+
+// Use memory cache for configs and feature media to reduce disk I/O
+const memoryCache = {
+    configs: new Map(),
+    featureMedia: new Map(),
+    lastUpdated: {
+        configs: 0,
+        featureMedia: 0
+    }
+};
+
+// Helper function to ensure storage API is accessible
 async function ensureStorageAccess() {
     try {
-        // Create storage directories if they don't exist
-        if (!fs.existsSync(MOUNT_PATH_MEDIA)) {
-            fs.mkdirSync(MOUNT_PATH_MEDIA, { recursive: true });
-            console.log('📂 Created media storage directory:', MOUNT_PATH_MEDIA);
-        }
-        if (!fs.existsSync(MOUNT_PATH_CONFIG)) {
-            fs.mkdirSync(MOUNT_PATH_CONFIG, { recursive: true });
-            console.log('📂 Created config storage directory:', MOUNT_PATH_CONFIG);
-        }
-
-        // Test write access to both paths
-        const testFileMedia = path.join(MOUNT_PATH_MEDIA, '.test');
-        const testFileConfig = path.join(MOUNT_PATH_CONFIG, '.test');
+        // Test storage API connectivity
+        await storageApi('GET', '/health');
+        console.log('✅ Storage API is accessible');
         
-        try {
-            fs.writeFileSync(testFileMedia, 'test');
-            fs.writeFileSync(testFileConfig, 'test');
-            fs.unlinkSync(testFileMedia);
-            fs.unlinkSync(testFileConfig);
-            console.log('✅ Storage write test successful');
-        } catch (writeError) {
-            console.error('❌ Storage write test failed:', writeError.message);
-            throw writeError;
-        }
-
-        console.log('✅ Connected to media storage:', MOUNT_PATH_MEDIA);
-        console.log('✅ Connected to config storage:', MOUNT_PATH_CONFIG);
+        // Initialize storage directories through API
+        await storageApi('POST', '/init', {
+            paths: ['media', 'configs']
+        });
+        
+        console.log('✅ Storage directories initialized');
         return true;
     } catch (error) {
-        console.error('❌ Storage access error:', error.message);
+        console.error('❌ Storage API error:', error.message);
         throw error; // In production, we want to fail if storage is not accessible
     }
 }
 
-// Initialize storage
-ensureStorageAccess().then(usingNetwork => {
-    if (!usingNetwork) {
-        console.log('📂 Using local storage:', LOCAL_CACHE_DIR);
-    }
+// Initialize storage API connection
+ensureStorageAccess().catch(error => {
+    console.error('Failed to initialize storage API:', error);
+    process.exit(1);
 });
 
 const express = require('express');
@@ -1082,49 +1114,70 @@ app.get('/api/load-config', async (req, res) => {
             return res.status(400).json({ error: 'Missing config ID parameter' });
         }
 
-        // First check cache
-        const cachedFiles = fs.readdirSync(CACHE_DIR);
-        let requestedConfig = cachedFiles.find(f => f.includes(configId));
+        let configContent;
 
-        // If not in cache, try to fetch from Discord and cache it
-        if (!requestedConfig) {
-            console.log(`🔍 Config ${configId} not found in cache, fetching from Discord...`);
-            const response = await fetch(`https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID}/messages?limit=100`, {
-                headers: {
-                    'Authorization': `Bot ${BOT_TOKEN}`,
-                    'Content-Type': 'application/json'
-                }
-            });
+        try {
+            // First try storage API
+            const response = await storageApi('GET', `/configs/${configId}`);
+            if (response.content) {
+                configContent = response.content;
+                // Cache the response
+                const cacheKey = `${configId}_config.ini`;
+                const cachePath = path.join(CACHE_DIR, cacheKey);
+                fs.writeFileSync(cachePath, configContent, 'utf8');
+                console.log(`💾 Cached config from storage API: ${cacheKey}`);
+            }
+        } catch (storageError) {
+            console.log(`🔍 Config ${configId} not found in storage API, checking cache...`);
+            
+            // Check cache
+            const cachedFiles = fs.readdirSync(CACHE_DIR);
+            const requestedConfig = cachedFiles.find(f => f.includes(configId));
 
-            if (response.ok) {
-                const messages = await response.json();
-                for (const msg of messages) {
-                    if (msg.attachments) {
-                        for (const attachment of msg.attachments) {
-                            if (attachment.filename.toLowerCase().endsWith('.ini') && 
-                                (attachment.filename.includes(configId) || msg.id === configId)) {
-                                const configResponse = await fetch(attachment.url);
-                                if (configResponse.ok) {
-                                    const content = await configResponse.text();
-                                    const cacheKey = `${msg.id}_${attachment.filename}`;
-                                    const cachePath = path.join(CACHE_DIR, cacheKey);
-                                    fs.writeFileSync(cachePath, content, 'utf8');
-                                    requestedConfig = cacheKey;
-                                    console.log(`💾 Cached new config: ${cacheKey}`);
-                                    break;
+            if (requestedConfig) {
+                const cachePath = path.join(CACHE_DIR, requestedConfig);
+                configContent = fs.readFileSync(cachePath, 'utf8');
+            } else {
+                // Try Discord as last resort
+                console.log(`🔍 Config ${configId} not found in cache, trying Discord...`);
+                const response = await fetch(`https://discord.com/api/v10/channels/${CONFIGS_CHANNEL_ID}/messages?limit=100`, {
+                    headers: {
+                        'Authorization': `Bot ${BOT_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const messages = await response.json();
+                    let found = false;
+                    for (const msg of messages) {
+                        if (msg.attachments) {
+                            for (const attachment of msg.attachments) {
+                                if (attachment.filename.toLowerCase().endsWith('.ini') && 
+                                    (attachment.filename.includes(configId) || msg.id === configId)) {
+                                    const configResponse = await fetch(attachment.url);
+                                    if (configResponse.ok) {
+                                        configContent = await configResponse.text();
+                                        const cacheKey = `${msg.id}_${attachment.filename}`;
+                                        const cachePath = path.join(CACHE_DIR, cacheKey);
+                                        fs.writeFileSync(cachePath, configContent, 'utf8');
+                                        console.log(`💾 Cached new config: ${cacheKey}`);
+                                        found = true;
+                                        break;
+                                    }
                                 }
                             }
                         }
+                        if (found) break;
                     }
-                    if (requestedConfig) break;
                 }
             }
         }
 
-        if (!requestedConfig) {
+        if (!configContent) {
             return res.status(404).json({ 
                 error: 'Config not found',
-                message: 'Config not found in cache or Discord channel'
+                message: 'Config not found in storage API, cache, or Discord channel'
             });
         }
 
@@ -1322,24 +1375,68 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
             }
         }
 
-        // Add to upload queue
-        await uploadQueue.add({
-            file: req.file,
-            content: req.body?.content,
-            embeds: req.body?.embeds,
-            channelId: CONFIGS_CHANNEL_ID2
-        });
+        // First upload file to storage API
+        if (req.file) {
+            try {
+                const fileContent = req.file.buffer.toString('utf8');
+                const filename = req.file.originalname;
+                const configId = Date.now().toString();
 
-        return res.json({ 
-            success: true, 
-            message: 'Config queued for upload', 
-            queueTime: new Date().toISOString() 
-        });
+                await storageApi('POST', '/configs', {
+                    id: configId,
+                    filename,
+                    content: fileContent,
+                    metadata: {
+                        originalName: filename,
+                        uploadTime: new Date().toISOString(),
+                        size: req.file.size
+                    }
+                });
 
+                console.log(`📤 Uploaded config ${filename} to storage API with ID: ${configId}`);
+
+                // Cache the uploaded config
+                memoryCache.configs.set(configId, fileContent);
+
+                // Then add to Discord upload queue
+                await uploadQueue.add({
+                    file: req.file,
+                    content: req.body?.content,
+                    embeds: req.body?.embeds,
+                    channelId: CONFIGS_CHANNEL_ID2,
+                    configId: configId
+                });
+
+                return res.json({ 
+                    success: true, 
+                    message: 'Config uploaded to storage and queued for Discord',
+                    configId: configId,
+                    queueTime: new Date().toISOString() 
+                });
+            } catch (storageError) {
+                console.error('Error uploading to storage API:', storageError);
+                // Fall back to just Discord upload
+                await uploadQueue.add({
+                    file: req.file,
+                    content: req.body?.content,
+                    embeds: req.body?.embeds,
+                    channelId: CONFIGS_CHANNEL_ID2
+                });
+
+                return res.json({ 
+                    success: true, 
+                    message: 'Config queued for Discord upload (storage API unavailable)', 
+                    queueTime: new Date().toISOString(),
+                    fallback: true
+                });
+            }
+        }
+
+        return res.status(400).json({ error: 'No file provided' });
     } catch (error) {
-        console.error('Error queueing config upload:', error);
+        console.error('Error in upload endpoint:', error);
         return res.status(500).json({ 
-            error: 'Failed to queue config upload',
+            error: 'Failed to process upload',
             message: error.message 
         });
     }
@@ -1371,7 +1468,7 @@ app.use((req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log(`🚀 Discord Reviews API running on port ${PORT}`);
     console.log(`📝 Reviews Channel ID: ${REVIEWS_CHANNEL_ID}`);
     console.log(`🎬 Buyer Media Channel ID: ${BUYER_MEDIA_CHANNEL_ID}`);
@@ -1383,4 +1480,46 @@ app.listen(PORT, () => {
     console.log(`📦 Config content endpoint: http://localhost:${PORT}/api/config-content`);
     console.log(`🌐 Website: http://localhost:${PORT}/`);
     console.log('🔒 Bot token loaded securely from environment variables');
+});
+
+// Graceful shutdown handler
+function shutdown(signal) {
+    console.log(`\n${signal} received. Starting graceful shutdown...`);
+    
+    // Clear memory caches
+    memoryCache.configs.clear();
+    memoryCache.featureMedia.clear();
+    
+    // Close server
+    server.close(() => {
+        console.log('✅ Server closed successfully');
+        
+        // Close any other connections or cleanup needed
+        // For example, if we have any open file handles or database connections
+        
+        console.log('👋 Goodbye!');
+        process.exit(0);
+    });
+
+    // Force exit after 10 seconds if graceful shutdown fails
+    setTimeout(() => {
+        console.error('❌ Could not close connections in time, forcefully shutting down');
+        process.exit(1);
+    }, 10000);
+}
+
+// Listen for shutdown signals
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+    console.error('❌ Uncaught Exception:', err);
+    shutdown('UNCAUGHT EXCEPTION');
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+    shutdown('UNHANDLED REJECTION');
 });
