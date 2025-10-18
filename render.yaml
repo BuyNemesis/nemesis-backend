@@ -3,13 +3,16 @@ services:
     name: nemesis-backend
     env: node
     buildCommand: npm install
-    startCommand: apt-get update && apt-get install -y cifs-utils && bash mount-storage.sh && node server.js
+    startCommand: node server.js
     envVars:
       - key: NODE_ENV
         value: production
-      - key: SAMBA_PASSWORD
-        sync: false  # Makes this a secret environment variable
+      - key: STORAGE_API_URL
+        value: http://100.126.96.99:3001  # Your storage server's Tailscale IP
+      - key: STORAGE_API_KEY
+        sync: false  # We can add an API key later for extra security
     rootDirectory: .
+    plan: starter  # We can use the starter plan now since we don't need sudo
     # Note: Additional environment variables must be configured in render.com dashboard:
     # - SAMBA_PASSWORD (if not using inline password in script)
     # - BOT_TOKEN
