@@ -3,6 +3,7 @@ require('dotenv').config();
 
 const fs = require('fs');
 const path = require('path');
+const fetch = require('node-fetch');
 
 // Storage API configuration
 const STORAGE_API = process.env.STORAGE_API_URL || (
@@ -11,15 +12,24 @@ const STORAGE_API = process.env.STORAGE_API_URL || (
         : 'http://localhost:3001'
 );
 
+// Flag to track storage API availability
+let storageApiAvailable = false;
+
 // Helper function for storage operations with retries
 async function storageApi(method, path, body = null, retries = 3) {
+    // If storage API is known to be down and this isn't a health check
+    if (!storageApiAvailable && path !== '/health') {
+        throw new Error('Storage API is currently unavailable');
+    }
+
     for (let i = 0; i < retries; i++) {
         try {
             const options = {
                 method,
                 headers: {
                     'Content-Type': 'application/json'
-                }
+                },
+                timeout: 5000 // 5 second timeout
             };
             if (body) {
                 options.body = JSON.stringify(body);
@@ -38,10 +48,20 @@ async function storageApi(method, path, body = null, retries = 3) {
 
             const data = await response.json();
             console.log(`✅ Storage API Success: ${method} ${path}`);
+            
+            // Mark storage as available on successful request
+            storageApiAvailable = true;
+            
             return data;
         } catch (error) {
             console.error(`❌ Storage API attempt ${i + 1}/${retries} failed:`, error);
-            if (i === retries - 1) throw error;
+            
+            // On final retry, mark storage as unavailable
+            if (i === retries - 1) {
+                storageApiAvailable = false;
+                throw error;
+            }
+            
             // Wait before retry (exponential backoff)
             await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
         }
@@ -87,7 +107,8 @@ async function ensureStorageAccess() {
 // Initialize storage API connection
 ensureStorageAccess().catch(error => {
     console.error('Failed to initialize storage API:', error);
-    process.exit(1);
+    console.log('⚠️ Starting server in fallback mode (using Discord storage only)');
+    storageApiAvailable = false;
 });
 
 const express = require('express');
