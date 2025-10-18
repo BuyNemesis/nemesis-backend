@@ -8,7 +8,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: STORAGE_API_URL
-        value: http://100.126.96.99:3001  # Your storage server's Tailscale IP
+        value: https://floriferous-involucral-socorro.ngrok-free.dev  # ngrok tunnel URL
       - key: STORAGE_API_KEY
         sync: false  # We can add an API key later for extra security
     rootDirectory: .
