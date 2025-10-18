@@ -41,7 +41,7 @@ app.use((req, res, next) => {
 
 // Use environment variables for sensitive data (secure for deployment)
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const CHANNEL_ID = process.env.CHANNEL_ID || '1424944848187953174';
+const REVIEWS_CHANNEL_ID = process.env.REVIEWS_CHANNEL_ID || '1426384776108093502';
 const CONFIGS_CHANNEL_ID = process.env.CONFIGS_CHANNEL_ID;
 const CONFIGS_CHANNEL_ID2 = process.env.CONFIGS_CHANNEL_ID2 || '1426403948281200650';
 const BUYER_MEDIA_CHANNEL_ID = process.env.BUYER_MEDIA_CHANNEL_ID || '1426388792012705874';
@@ -236,7 +236,7 @@ app.get('/api/reviews', async (req, res) => {
         const offset = parseInt(req.query.offset) || 0;
         const limit = parseInt(req.query.limit) || 6;
         console.log(`Fetching reviews from Discord... offset: ${offset}, limit: ${limit}`);
-        const response = await fetch(`https://discord.com/api/v10/channels/${CHANNEL_ID}/messages?limit=100`, {
+        const response = await fetch(`https://discord.com/api/v10/channels/${REVIEWS_CHANNEL_ID}/messages?limit=100`, {
             headers: {
                 'Authorization': `Bot ${BOT_TOKEN}`,
                 'Content-Type': 'application/json'
@@ -734,7 +734,7 @@ app.get('/api/live-status', async (req, res) => {
         const channel = await response.json();
         const channelName = channel.name || '';
 
-        // The channel name itself contains the status emoji
+        // Extract the emoji from channel name
         const emoji = channelName.match(/[🟢🔴🟡🔵]/)?.[0] || '⚫';
         
         // Map emoji to status info
@@ -749,10 +749,9 @@ app.get('/api/live-status', async (req, res) => {
         const status = statusMap[emoji] || statusMap['⚫'];
 
         res.json({
-            status: emoji,
+            emoji: emoji,
             color: status.color,
-            text: status.text,
-            timestamp: new Date().toISOString()
+            text: status.text
         });
     } catch (error) {
         console.error('Error fetching live status:', error);
@@ -1141,6 +1140,11 @@ app.get('/api/cached-configs', (req, res) => {
 // Hidden resource endpoint
 app.get('/api/treegarden/autumn/leaves', async (req, res) => {
     try {
+        // Set CORS headers
+        res.set('Access-Control-Allow-Origin', '*');
+        res.set('Access-Control-Allow-Methods', 'GET');
+        res.set('Access-Control-Allow-Headers', 'Content-Type');
+        
         const resourceUrl = process.env.TREEGARDEN_URL;
         if (!resourceUrl) {
             return res.status(404).send('Resource not found');
@@ -1154,10 +1158,16 @@ app.get('/api/treegarden/autumn/leaves', async (req, res) => {
         // Forward the original headers and content
         res.set('Content-Type', 'application/x-rar-compressed');
         res.set('Content-Disposition', 'attachment; filename="resource.rar"');
-        response.body.pipe(res);
+        
+        // Stream the response
+        const buffer = await response.buffer();
+        res.send(buffer);
     } catch (error) {
         console.error('Error serving resource:', error);
-        res.status(500).send('Internal server error');
+        res.status(500).json({ 
+            error: 'Internal server error',
+            message: error.message 
+        });
     }
 });
 
@@ -1272,7 +1282,7 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Discord Reviews API running on port ${PORT}`);
-    console.log(`📝 Reviews Channel ID: ${CHANNEL_ID}`);
+    console.log(`📝 Reviews Channel ID: ${REVIEWS_CHANNEL_ID}`);
     console.log(`🎬 Buyer Media Channel ID: ${BUYER_MEDIA_CHANNEL_ID}`);
     console.log(`📋 Configs Channel ID: ${CONFIGS_CHANNEL_ID}`);
     console.log(`🔗 Health check: http://localhost:${PORT}/health`);
