@@ -30,12 +30,16 @@ async function storageApi(method, path, body = null, retries = 3) {
         try {
             const options = {
                 method,
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: {},
                 signal: controller.signal
             };
-            if (body) {
+
+            // Handle FormData vs JSON
+            if (body instanceof FormData) {
+                options.body = body;
+                options.headers = { ...body.getHeaders() };
+            } else if (body) {
+                options.headers['Content-Type'] = 'application/json';
                 options.body = JSON.stringify(body);
             }
             
