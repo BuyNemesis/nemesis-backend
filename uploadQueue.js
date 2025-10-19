@@ -54,13 +54,7 @@ class UploadQueue {
 
         const formData = new FormData();
         
-        // Add file if present
-        if (file) {
-            formData.append('files[0]', file.buffer, file.originalname);
-            console.log('Added file to Discord:', file.originalname);
-        }
-        
-        // Create payload with guaranteed non-empty content
+        // Create guaranteed non-empty content
         const defaultContent = `📁 New config uploaded: ${file?.originalname || 'config.ini'}`;
         let finalContent = (content && content.trim()) ? content.trim() : defaultContent;
         
@@ -69,24 +63,18 @@ class UploadQueue {
             finalContent = '📁 Config upload notification';
         }
         
-        const payload = {
-            content: finalContent
-        };
+        console.log('Discord content:', finalContent, 'Length:', finalContent.length);
         
-        console.log('Discord payload content:', payload.content, 'Length:', payload.content.length);
+        // Add content directly to form (not as payload_json)
+        formData.append('content', finalContent);
         
-        if (embeds) {
-            try {
-                payload.embeds = typeof embeds === 'string' ? JSON.parse(embeds) : embeds;
-            } catch (e) {
-                console.warn('Invalid embeds format, skipping');
-            }
+        // Add file if present
+        if (file) {
+            formData.append('files[0]', file.buffer, file.originalname);
+            console.log('Added file to Discord:', file.originalname);
         }
         
-        formData.append('payload_json', JSON.stringify(payload));
-        
-        console.log('Full payload JSON:', JSON.stringify(payload));
-        console.log('FormData debug - payload_json exists:', !!JSON.stringify(payload));
+        // Don't use payload_json when uploading files - Discord ignores it
 
         // Upload to Discord via webhook
         console.log('Sending to Discord webhook:', process.env.CLOUD_WEBHOOK ? 'SET' : 'NOT SET');
