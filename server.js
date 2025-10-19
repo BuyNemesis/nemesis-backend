@@ -1412,22 +1412,37 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
         // First upload file to storage API
         if (req.file) {
             try {
+                console.log('Skipping storage upload for now, testing Discord only...');
+                
+                const configId = Date.now().toString();
+                console.log('Request body content:', req.body?.content, 'Type:', typeof req.body?.content);
+                
+                // Then add to Discord upload queue
+                await uploadQueue.add({
+                    file: req.file,
+                    content: req.body?.content,
+                    embeds: req.body?.embeds,
+                    channelId: CONFIGS_CHANNEL_ID2,
+                    configId: configId
+                });
+
+                return res.json({ 
+                    success: true, 
+                    message: 'Config queued for Discord upload (testing mode)',
+                    configId: configId,
+                    queueTime: new Date().toISOString() 
+                });
+                
+                /* STORAGE UPLOAD DISABLED FOR TESTING
                 const fileContent = req.file.buffer.toString('utf8');
                 const filename = req.file.originalname;
                 const configId = Date.now().toString();
 
                 console.log('Uploading to storage:', { filename, size: req.file.size, mimetype: req.file.mimetype });
 
+                // Use the exact same FormData approach that works in uploadQueue
                 const formData = new FormData();
-                // Create a proper stream from buffer
-                const fileStream = new Readable();
-                fileStream.push(req.file.buffer);
-                fileStream.push(null); // End the stream
-                
-                formData.append('file', fileStream, {
-                    filename: filename,
-                    contentType: req.file.mimetype || 'application/octet-stream'
-                });
+                formData.append('file', req.file.buffer, filename);
                 
                 // Use fetch directly for file upload (not storageApi helper)
                 console.log('Sending request to:', `${STORAGE_API}/api/upload/config`);
@@ -1453,6 +1468,8 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
                 // Cache the uploaded config
                 memoryCache.configs.set(configId, fileContent);
 
+                console.log('Request body content:', req.body?.content, 'Type:', typeof req.body?.content);
+                
                 // Then add to Discord upload queue
                 await uploadQueue.add({
                     file: req.file,
@@ -1468,6 +1485,7 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
                     configId: configId,
                     queueTime: new Date().toISOString() 
                 });
+                */
             } catch (storageError) {
                 console.error('Error uploading to storage API:', storageError);
                 // Fall back to just Discord upload

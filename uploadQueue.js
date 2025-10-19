@@ -54,27 +54,39 @@ class UploadQueue {
 
         const formData = new FormData();
         
-        // Create payload (webhooks don't need channel_id)
-        const defaultContent = `📁 New config uploaded: ${file?.originalname || 'config.ini'}`;
-        let finalContent = content && content.trim() ? content.trim() : defaultContent;
-        
-        // Ensure content is never empty
-        if (!finalContent || finalContent.length === 0) {
-            finalContent = '📁 Config upload notification';
-        }
-        
-        console.log('Discord payload content:', finalContent, 'Length:', finalContent.length);
-
-        // Add content first
-        formData.append('content', finalContent);
-        
         // Add file if present
         if (file) {
             formData.append('files[0]', file.buffer, file.originalname);
             console.log('Added file to Discord:', file.originalname);
         }
         
-        // Don't use payload_json for simple content + file uploads
+        // Create payload with guaranteed non-empty content
+        const defaultContent = `📁 New config uploaded: ${file?.originalname || 'config.ini'}`;
+        let finalContent = (content && content.trim()) ? content.trim() : defaultContent;
+        
+        // Ensure content is never empty
+        if (!finalContent || finalContent.length === 0) {
+            finalContent = '📁 Config upload notification';
+        }
+        
+        const payload = {
+            content: finalContent
+        };
+        
+        console.log('Discord payload content:', payload.content, 'Length:', payload.content.length);
+        
+        if (embeds) {
+            try {
+                payload.embeds = typeof embeds === 'string' ? JSON.parse(embeds) : embeds;
+            } catch (e) {
+                console.warn('Invalid embeds format, skipping');
+            }
+        }
+        
+        formData.append('payload_json', JSON.stringify(payload));
+        
+        console.log('Full payload JSON:', JSON.stringify(payload));
+        console.log('FormData debug - payload_json exists:', !!JSON.stringify(payload));
 
         // Upload to Discord via webhook
         console.log('Sending to Discord webhook:', process.env.CLOUD_WEBHOOK ? 'SET' : 'NOT SET');
