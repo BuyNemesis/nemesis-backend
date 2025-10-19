@@ -1416,7 +1416,7 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
                 const configId = Date.now().toString();
 
                 const formData = new FormData();
-                formData.append('file', new Blob([fileContent]), {
+                formData.append('file', fileContent, {
                     filename: filename,
                     contentType: 'application/octet-stream',
                     knownLength: fileContent.length
