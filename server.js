@@ -1415,22 +1415,32 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
                 const filename = req.file.originalname;
                 const configId = Date.now().toString();
 
+                console.log('Uploading to storage:', { filename, size: req.file.size, mimetype: req.file.mimetype });
+
                 const formData = new FormData();
                 formData.append('file', req.file.buffer, {
                     filename: filename,
-                    contentType: 'text/plain'
+                    contentType: req.file.mimetype || 'application/octet-stream'
                 });
                 
                 // Use fetch directly for file upload (not storageApi helper)
+                console.log('Sending request to:', `${STORAGE_API}/api/upload/config`);
                 const uploadResponse = await fetch(`${STORAGE_API}/api/upload/config`, {
                     method: 'POST',
-                    body: formData
+                    body: formData,
+                    headers: formData.getHeaders()
                 });
+                
+                console.log('Storage response status:', uploadResponse.status);
                 
                 if (!uploadResponse.ok) {
                     const errorText = await uploadResponse.text();
+                    console.log('Storage error response:', errorText);
                     throw new Error(`Storage upload failed: ${uploadResponse.status} - ${errorText}`);
                 }
+
+                const storageResult = await uploadResponse.json();
+                console.log('Storage upload result:', storageResult);
 
                 console.log(`📤 Uploaded config ${filename} to storage API with ID: ${configId}`);
 

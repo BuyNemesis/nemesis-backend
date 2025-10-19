@@ -1,5 +1,8 @@
 const FormData = require('form-data');
 
+// Use built-in fetch for Node.js >=18 or node-fetch for older versions
+const fetch = globalThis.fetch || require('node-fetch');
+
 // Simple upload queue implementation
 class UploadQueue {
     constructor() {
@@ -43,6 +46,8 @@ class UploadQueue {
     async processUpload(uploadData) {
         const { file, content, embeds, channelId, configId } = uploadData;
         
+        console.log('Processing upload:', { hasFile: !!file, content, configId });
+        
         if (!process.env.CLOUD_WEBHOOK) {
             throw new Error('CLOUD_WEBHOOK environment variable not set');
         }
@@ -52,12 +57,23 @@ class UploadQueue {
         // Add file if present
         if (file) {
             formData.append('files[0]', file.buffer, file.originalname);
+            console.log('Added file to Discord:', file.originalname);
         }
         
         // Create payload (webhooks don't need channel_id)
+        const defaultContent = `📁 New config uploaded: ${file?.originalname || 'config.ini'}`;
+        let finalContent = content && content.trim() ? content.trim() : defaultContent;
+        
+        // Ensure content is never empty
+        if (!finalContent || finalContent.length === 0) {
+            finalContent = '📁 Config upload notification';
+        }
+        
         const payload = {
-            content: content || `📁 New config uploaded: ${file?.originalname || 'config.ini'}`
+            content: finalContent
         };
+        
+        console.log('Discord payload content:', payload.content, 'Length:', payload.content.length);
         
         if (embeds) {
             try {
@@ -70,14 +86,18 @@ class UploadQueue {
         formData.append('payload_json', JSON.stringify(payload));
 
         // Upload to Discord via webhook
+        console.log('Sending to Discord webhook:', process.env.CLOUD_WEBHOOK ? 'SET' : 'NOT SET');
         const response = await fetch(process.env.CLOUD_WEBHOOK, {
             method: 'POST',
             body: formData,
             headers: formData.getHeaders()
         });
 
+        console.log('Discord response status:', response.status);
+
         if (!response.ok) {
             const errorText = await response.text();
+            console.log('Discord error response:', errorText);
             throw new Error(`Discord webhook error: ${response.status} - ${errorText}`);
         }
 
