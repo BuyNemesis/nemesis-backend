@@ -1,31 +1,14 @@
 {
-  "name": "nemesis-discord-reviews",
+  "name": "nemesis-storage-api",
   "version": "1.0.0",
-  "description": "Backend server for fetching Discord reviews for Nemesis website",
-  "main": "server.js",
+  "description": "Storage API for Nemesis",
+  "main": "storage-server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
+    "start": "node storage-server.js"
   },
   "dependencies": {
-    "axios": "^1.12.2",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "form-data": "^4.0.4",
     "multer": "^1.4.5-lts.1",
-    "node-fetch": "^2.6.7"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
-  },
-  "keywords": [
-    "discord",
-    "api",
-    "reviews",
-    "roblox",
-    "nemesis"
-  ],
-  "author": "",
-  "license": "MIT"
+    "cors": "^2.8.5"
+  }
 }

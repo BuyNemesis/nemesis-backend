@@ -1,19 +1,14 @@
 services:
   - type: web
-    name: nemesis-backend
+    name: nemesis-storage-api
     env: node
     buildCommand: npm install
-    startCommand: node server.js
+    startCommand: node storage-server.js
     envVars:
       - key: NODE_ENV
         value: production
-      - key: STORAGE_API_URL
-        value: https://floriferous-involucral-socorro.ngrok-free.dev  # ngrok tunnel URL
-      - key: STORAGE_API_KEY
-        sync: false  # We can add an API key later for extra security
+      - key: PORT
+        value: 3001
     rootDirectory: .
-    plan: starter  # We can use the starter plan now since we don't need sudo
-    # Note: Additional environment variables must be configured in render.com dashboard:
-    # - SAMBA_PASSWORD (if not using inline password in script)
-    # - BOT_TOKEN
-    # - Other sensitive credentials
+    # Config storage API server
+    # Will create directories automatically on startup
