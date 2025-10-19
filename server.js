@@ -1536,8 +1536,8 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
                     filename,
                     fileSize: fileContent.length,
                     headers: {
-                        ...formData.getHeaders(),
-                        'Content-Length': fileContent.length.toString()
+                        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+                        'Content-Length': body.length.toString()
                     }
                 });
 
@@ -1546,8 +1546,8 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
                     url: `${STORAGE_API}/api/upload/config`,
                     method: 'POST',
                     headers: {
-                        ...formData.getHeaders(),
-                        'Content-Length': fileContent.length.toString()
+                        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+                        'Content-Length': body.length.toString()
                     },
                     fileDetails: {
                         name: filename,
