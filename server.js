@@ -7,6 +7,11 @@ const path = require('path');
 // Use built-in fetch for Node.js >=18 or node-fetch for older versions
 const fetch = globalThis.fetch || require('node-fetch');
 
+// Import required packages
+const express = require('express');
+const cors = require('cors');
+const multer = require('multer');
+
 // Storage API configuration
 const STORAGE_API = process.env.STORAGE_API_URL || 'http://localhost:3001';
 
@@ -34,10 +39,14 @@ async function storageApi(method, path, body = null, retries = 3) {
                 signal: controller.signal
             };
 
-            // Handle FormData vs JSON
-            if (body instanceof FormData) {
+            // Handle body types
+            if (typeof body === 'string' && body.startsWith('--')) {
+                // Manual multipart data
                 options.body = body;
-                options.headers = { ...body.getHeaders() };
+                const boundaryMatch = body.match(/^--([^\r\n]+)/m);
+                if (boundaryMatch) {
+                    options.headers['Content-Type'] = `multipart/form-data; boundary=${boundaryMatch[1]}`;
+                }
             } else if (body) {
                 options.headers['Content-Type'] = 'application/json';
                 options.body = JSON.stringify(body);
@@ -127,11 +136,6 @@ ensureStorageAccess().catch(error => {
     console.log('⚠️ Starting server in fallback mode (using Discord storage only)');
     storageApiAvailable = false;
 });
-
-const express = require('express');
-const cors = require('cors');
-const multer = require('multer');
-const FormData = require('form-data');
 
 // Import storage routes
 const storageRoutes = require('./storage-routes');
@@ -1419,13 +1423,15 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
                 const filename = req.file.originalname;
                 const configId = Date.now().toString();
 
-                const formData = new FormData();
-                formData.append('file', fileContent, {
-                    filename: filename,
-                    contentType: 'application/octet-stream',
-                    knownLength: fileContent.length
-                });
-                await storageApi('POST', '/api/upload/config', formData);
+                // Construct multipart data manually
+                const boundary = '----FormBoundary' + Date.now();
+                let requestBody = `--${boundary}\r\n`;
+                requestBody += `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n`;
+                requestBody += `Content-Type: ${filename.toLowerCase().endsWith('.ini') ? 'text/plain' : 'application/octet-stream'}\r\n\r\n`;
+                requestBody += fileContent.toString('binary');
+                requestBody += `\r\n--${boundary}--\r\n`;
+
+                await storageApi('POST', '/api/upload/config', requestBody);
 
                 console.log(`📤 Uploaded config ${filename} to storage API with ID: ${configId}`);
 
