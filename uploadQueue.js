@@ -159,6 +159,11 @@ class UploadQueue {
                 
                 return await fileResponse.json();
             } else {
+                // If we have no file, just return the testResponse
+                console.log(`📤 Successfully uploaded to Discord channel ${channelId}`);
+                if (configId) {
+                    console.log(`🔗 Config ID: ${configId}`);
+                }
                 return await testResponse.json();
             }
         } else {
@@ -166,14 +171,6 @@ class UploadQueue {
             console.log('Content-only test failed:', errorText);
             throw new Error(`Discord webhook error: ${testResponse.status} - ${errorText}`);
         }
-
-        console.log(`📤 Successfully uploaded to Discord channel ${channelId}`);
-        
-        if (configId) {
-            console.log(`🔗 Config ID: ${configId}`);
-        }
-
-        return await response.json();
     }
 }
 
