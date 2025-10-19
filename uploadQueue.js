@@ -126,9 +126,13 @@ class UploadQueue {
                     content: finalContent
                 };
                 
-                // Discord webhook file format
+                // Discord webhook file format - using buffer directly
                 formData.append('payload_json', JSON.stringify(payload));
-                formData.append('file', new Blob([file.buffer], { type: 'text/plain' }), file.originalname);
+                // For Node.js FormData, use the buffer directly with filename
+                formData.append('file', file.buffer, {
+                    filename: file.originalname,
+                    contentType: 'text/plain'
+                });
                 
                 console.log('Discord FormData fields:', {
                     payload: JSON.stringify(payload),

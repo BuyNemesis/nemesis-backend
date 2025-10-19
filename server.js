@@ -1418,18 +1418,19 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
 
                 console.log('Uploading to storage:', { filename, size: req.file.size, mimetype: req.file.mimetype });
 
-                // Create proper file stream for multer
+                // Create form data with buffer directly
                 const formData = new FormData();
-                formData.append('file', new Blob([req.file.buffer]), filename);
+                formData.append('file', req.file.buffer, {
+                    filename: filename,
+                    contentType: 'text/plain'
+                });
                 
-                // Use fetch with proper streaming
+                // Use fetch with proper headers
                 console.log('Sending request to:', `${STORAGE_API}/api/upload/config`);
                 const uploadResponse = await fetch(`${STORAGE_API}/api/upload/config`, {
                     method: 'POST',
                     body: formData,
-                    headers: {
-                        ...formData.getHeaders()
-                    }
+                    headers: formData.getHeaders()
                 });
                 
                 console.log('Storage response status:', uploadResponse.status);
