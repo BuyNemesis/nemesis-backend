@@ -1418,15 +1418,21 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
 
                 console.log('Uploading to storage:', { filename, size: req.file.size, mimetype: req.file.mimetype });
 
-                // Create form data with buffer directly
+                // Create form data with proper field name matching Ubuntu server
                 const formData = new FormData();
-                formData.append('file', req.file.buffer, {
+                // Use field name 'config' instead of 'file' to match Ubuntu server
+                formData.append('config', req.file.buffer, {
                     filename: filename,
-                    contentType: 'text/plain'
+                    contentType: 'application/octet-stream'  // Use generic binary type
                 });
                 
-                // Use fetch with proper headers
                 console.log('Sending request to:', `${STORAGE_API}/api/upload/config`);
+                console.log('Form data fields:', {
+                    fieldName: 'config',
+                    filename: filename,
+                    size: req.file.buffer.length
+                });
+
                 const uploadResponse = await fetch(`${STORAGE_API}/api/upload/config`, {
                     method: 'POST',
                     body: formData,
