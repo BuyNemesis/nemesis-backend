@@ -1409,31 +1409,9 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
             }
         }
 
-        // First upload file to storage API
+        // First upload file to storage API, then queue for Discord
         if (req.file) {
             try {
-                console.log('Skipping storage upload for now, testing Discord only...');
-                
-                const configId = Date.now().toString();
-                console.log('Request body content:', req.body?.content, 'Type:', typeof req.body?.content);
-                
-                // Then add to Discord upload queue
-                await uploadQueue.add({
-                    file: req.file,
-                    content: req.body?.content,
-                    embeds: req.body?.embeds,
-                    channelId: CONFIGS_CHANNEL_ID2,
-                    configId: configId
-                });
-
-                return res.json({ 
-                    success: true, 
-                    message: 'Config queued for Discord upload (testing mode)',
-                    configId: configId,
-                    queueTime: new Date().toISOString() 
-                });
-                
-                /* STORAGE UPLOAD DISABLED FOR TESTING
                 const fileContent = req.file.buffer.toString('utf8');
                 const filename = req.file.originalname;
                 const configId = Date.now().toString();
@@ -1485,7 +1463,6 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
                     configId: configId,
                     queueTime: new Date().toISOString() 
                 });
-                */
             } catch (storageError) {
                 console.error('Error uploading to storage API:', storageError);
                 // Fall back to just Discord upload

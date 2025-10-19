@@ -129,7 +129,8 @@ class UploadQueue {
                 
                 const fileResponse = await fetch(process.env.CLOUD_WEBHOOK, {
                     method: 'POST',
-                    body: formData
+                    body: formData,
+                    headers: formData.getHeaders()
                 });
                 
                 console.log('File upload response:', fileResponse.status);
