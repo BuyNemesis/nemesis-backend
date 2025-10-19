@@ -54,12 +54,6 @@ class UploadQueue {
 
         const formData = new FormData();
         
-        // Add file if present
-        if (file) {
-            formData.append('files[0]', file.buffer, file.originalname);
-            console.log('Added file to Discord:', file.originalname);
-        }
-        
         // Create payload (webhooks don't need channel_id)
         const defaultContent = `📁 New config uploaded: ${file?.originalname || 'config.ini'}`;
         let finalContent = content && content.trim() ? content.trim() : defaultContent;
@@ -69,21 +63,18 @@ class UploadQueue {
             finalContent = '📁 Config upload notification';
         }
         
-        const payload = {
-            content: finalContent
-        };
+        console.log('Discord payload content:', finalContent, 'Length:', finalContent.length);
+
+        // Add content first
+        formData.append('content', finalContent);
         
-        console.log('Discord payload content:', payload.content, 'Length:', payload.content.length);
-        
-        if (embeds) {
-            try {
-                payload.embeds = typeof embeds === 'string' ? JSON.parse(embeds) : embeds;
-            } catch (e) {
-                console.warn('Invalid embeds format, skipping');
-            }
+        // Add file if present
+        if (file) {
+            formData.append('files[0]', file.buffer, file.originalname);
+            console.log('Added file to Discord:', file.originalname);
         }
         
-        formData.append('payload_json', JSON.stringify(payload));
+        // Don't use payload_json for simple content + file uploads
 
         // Upload to Discord via webhook
         console.log('Sending to Discord webhook:', process.env.CLOUD_WEBHOOK ? 'SET' : 'NOT SET');

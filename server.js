@@ -3,6 +3,7 @@ require('dotenv').config();
 
 const fs = require('fs');
 const path = require('path');
+const { Readable } = require('stream');
 
 // Use built-in fetch for Node.js >=18 or node-fetch for older versions
 const fetch = globalThis.fetch || require('node-fetch');
@@ -1418,7 +1419,12 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
                 console.log('Uploading to storage:', { filename, size: req.file.size, mimetype: req.file.mimetype });
 
                 const formData = new FormData();
-                formData.append('file', req.file.buffer, {
+                // Create a proper stream from buffer
+                const fileStream = new Readable();
+                fileStream.push(req.file.buffer);
+                fileStream.push(null); // End the stream
+                
+                formData.append('file', fileStream, {
                     filename: filename,
                     contentType: req.file.mimetype || 'application/octet-stream'
                 });
