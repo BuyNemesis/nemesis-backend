@@ -1510,11 +1510,23 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
             try {
                 console.log('Uploading to storage:', { filename, size: req.file.size, mimetype: req.file.mimetype });
                 
-                const formData = new FormData();
-                formData.append('file', fileContent, {
-                    filename: filename,
-                    contentType: req.file.mimetype || 'application/octet-stream'
-                });
+                const boundary = '------------------------' + Date.now().toString(16);
+                const parts = [];
+
+                // Add file field
+                parts.push(Buffer.from(
+                    '--' + boundary + '\r\n' +
+                    `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
+                    'Content-Type: application/octet-stream\r\n' +
+                    '\r\n'
+                ));
+
+                // Add file content
+                parts.push(fileContent);
+                parts.push(Buffer.from('\r\n--' + boundary + '--\r\n'));
+
+                // Concatenate all parts into a single buffer
+                const body = Buffer.concat(parts);
                 
                 console.log('Sending request to:', `${STORAGE_API}/api/upload/config`);
 
@@ -1550,10 +1562,11 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
                 try {
                     uploadResponse = await fetch(`${STORAGE_API}/api/upload/config`, {
                         method: 'POST',
-                        body: formData,
+                        method: 'POST',
+                        body: body,
                         headers: {
-                            ...formData.getHeaders(),
-                            'Content-Length': fileContent.length.toString()
+                            'Content-Type': `multipart/form-data; boundary=${boundary}`,
+                            'Content-Length': body.length.toString()
                         }
                     });
                 } catch (networkError) {
@@ -1625,22 +1638,12 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
                     matches: cached && Buffer.compare(cached, fileContent) === 0 ? 'yes' : 'no'
                 });
 
-                console.log('Request body content:', req.body?.content, 'Type:', typeof req.body?.content);
-                
-                // Then add to Discord upload queue
-                await uploadQueue.add({
-                    file: req.file,
-                    content: req.body?.content,
-                    embeds: req.body?.embeds,
-                    channelId: CONFIGS_CHANNEL_ID2,
-                    configId: configId
-                });
-
+                // The storage server will handle Discord upload
                 return res.json({ 
                     success: true, 
-                    message: 'Config uploaded to storage and queued for Discord',
+                    message: 'Config uploaded to storage server',
                     configId: configId,
-                    queueTime: new Date().toISOString() 
+                    timestamp: new Date().toISOString() 
                 });
             } catch (storageError) {
                 // Parse detailed error info if available
@@ -1672,20 +1675,12 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
                     }
                 });
 
-                // Attempt Discord fallback
-                console.log('Attempting Discord fallback upload...');
-                await uploadQueue.add({
-                    file: req.file,
-                    content: req.body?.content,
-                    embeds: req.body?.embeds,
-                    channelId: CONFIGS_CHANNEL_ID2
-                });
-
-                return res.json({ 
-                    success: true, 
-                    message: 'Config queued for Discord upload (storage API unavailable)', 
-                    queueTime: new Date().toISOString(),
-                    fallback: true
+                // If storage server is down, we can't proceed
+                return res.status(503).json({ 
+                    success: false, 
+                    message: 'Storage server unavailable, please try again later', 
+                    timestamp: new Date().toISOString(),
+                    error: errorDetails
                 });
             }
         }
