@@ -1503,11 +1503,11 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
 
         // First upload file to storage API, then queue for Discord
         if (req.file) {
-            try {
-                const fileContent = req.file.buffer;
-                const filename = req.file.originalname;
-                const configId = Date.now().toString();
+            const fileContent = req.file.buffer;
+            const filename = req.file.originalname;
+            const configId = Date.now().toString();
 
+            try {
                 console.log('Uploading to storage:', { filename, size: req.file.size, mimetype: req.file.mimetype });
                 
                 const formData = new FormData();
@@ -1657,8 +1657,8 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
                 console.error('Storage upload failed:', {
                     timestamp: new Date().toISOString(),
                     file: {
-                        name: filename,
-                        size: fileContent.length,
+                        name: req.file.originalname,
+                        size: req.file.size,
                         type: req.file.mimetype
                     },
                     error: errorDetails,
