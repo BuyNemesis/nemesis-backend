@@ -1,5 +1,3 @@
-const FormData = require('form-data');
-
 // Use built-in fetch for Node.js >=18 or node-fetch for older versions
 const fetch = globalThis.fetch || require('node-fetch');
 
@@ -75,36 +73,66 @@ class UploadQueue {
         console.log('Discord content:', finalContent, 'Length:', finalContent.length);
 
         if (file) {
-            // File upload format - use multipart/form-data
-            const formData = new FormData();
-            
-            // Add content as a regular form field - MUST NOT use payload_json with files
-            formData.append('content', finalContent);
-            
-            // Add file directly - form-data handles the multipart boundary
-            formData.append('file', file.buffer, file.originalname);
+            // Generate a unique boundary
+            const boundary = '------------------------' + Date.now().toString(16);
 
-            // For embeds with files, they must go in the content field
+            // Manually construct multipart form-data
+            const parts = [];
+
+            // Add content field
+            parts.push(Buffer.from(
+                '--' + boundary + '\r\n' +
+                'Content-Disposition: form-data; name="content"\r\n' +
+                '\r\n' +
+                finalContent + '\r\n'
+            ));
+
+            // Add file field
+            parts.push(Buffer.from(
+                '--' + boundary + '\r\n' +
+                `Content-Disposition: form-data; name="file"; filename="${file.originalname}"\r\n` +
+                'Content-Type: application/octet-stream\r\n' +
+                '\r\n'
+            ));
+
+            // Add file content
+            parts.push(file.buffer);
+            parts.push(Buffer.from('\r\n'));
+
+            // Add embeds if present
             if (embeds) {
                 try {
                     const embedsData = typeof embeds === 'string' ? JSON.parse(embeds) : embeds;
-                    // When we have a file, embeds must be part of the content field
-                    formData.append('content', finalContent + '\n' + JSON.stringify(embedsData));
+                    parts.push(Buffer.from(
+                        '--' + boundary + '\r\n' +
+                        'Content-Disposition: form-data; name="embeds"\r\n' +
+                        '\r\n' +
+                        JSON.stringify(embedsData) + '\r\n'
+                    ));
                 } catch (e) {
                     console.warn('Invalid embeds format, skipping');
                 }
             }
 
+            // Add final boundary
+            parts.push(Buffer.from('--' + boundary + '--\r\n'));
+
+            // Concatenate all parts into a single buffer
+            const body = Buffer.concat(parts);
+
             console.log('Sending file to Discord webhook:', {
                 filename: file.originalname,
-                contentType: file.mimetype,
-                size: file.buffer.length
+                contentLength: body.length,
+                boundary: boundary
             });
 
             const response = await fetch(process.env.CLOUD_WEBHOOK, {
                 method: 'POST',
-                body: formData,
-                headers: formData.getHeaders()
+                body: body,
+                headers: {
+                    'Content-Type': `multipart/form-data; boundary=${boundary}`,
+                    'Content-Length': body.length.toString()
+                }
             });
 
             if (!response.ok) {
