@@ -1418,16 +1418,18 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
 
                 console.log('Uploading to storage:', { filename, size: req.file.size, mimetype: req.file.mimetype });
 
-                // Use the exact same FormData approach that works in uploadQueue
+                // Create proper file stream for multer
                 const formData = new FormData();
-                formData.append('file', req.file.buffer, filename);
+                formData.append('file', new Blob([req.file.buffer]), filename);
                 
-                // Use fetch directly for file upload (not storageApi helper)
+                // Use fetch with proper streaming
                 console.log('Sending request to:', `${STORAGE_API}/api/upload/config`);
                 const uploadResponse = await fetch(`${STORAGE_API}/api/upload/config`, {
                     method: 'POST',
                     body: formData,
-                    headers: formData.getHeaders()
+                    headers: {
+                        ...formData.getHeaders()
+                    }
                 });
                 
                 console.log('Storage response status:', uploadResponse.status);

@@ -27,20 +27,31 @@ class UploadQueue {
         this.processing = true;
         console.log('🔄 Processing upload queue...');
 
-        while (this.queue.length > 0) {
+        // Process one item every minute
+        const processNext = async () => {
+            if (this.queue.length === 0) {
+                this.processing = false;
+                console.log('✅ Upload queue processed');
+                return;
+            }
+
             const uploadData = this.queue.shift();
             
             try {
                 await this.processUpload(uploadData);
                 console.log('✅ Upload processed successfully');
+                console.log(`📊 Remaining in queue: ${this.queue.length}`);
             } catch (error) {
                 console.error('❌ Upload failed:', error);
                 // Could implement retry logic here
             }
-        }
 
-        this.processing = false;
-        console.log('✅ Upload queue processed');
+            // Wait 1 minute before processing next item
+            setTimeout(processNext, 60000); // 60 seconds * 1000 = 1 minute
+        };
+
+        // Start processing queue
+        await processNext();
     }
 
     async processUpload(uploadData) {
@@ -115,11 +126,9 @@ class UploadQueue {
                     content: finalContent
                 };
                 
+                // Discord webhook file format
                 formData.append('payload_json', JSON.stringify(payload));
-                formData.append('files[0]', file.buffer, {
-                    filename: file.originalname,
-                    contentType: 'text/plain'
-                });
+                formData.append('file', new Blob([file.buffer], { type: 'text/plain' }), file.originalname);
                 
                 console.log('Discord FormData fields:', {
                     payload: JSON.stringify(payload),
