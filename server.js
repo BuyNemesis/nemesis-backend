@@ -130,7 +130,7 @@ const multer = require('multer');
 const FormData = require('form-data');
 
 // Import storage routes
-const storageRoutes = require('./routes/storage');
+const storageRoutes = require('./storage');
 
 // Set up multer for file uploads
 const upload = multer({
