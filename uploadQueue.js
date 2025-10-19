@@ -127,10 +127,14 @@ class UploadQueue {
                 };
                 
                 // Discord webhook format for files
-                formData.append('content', finalContent);  // Direct content field
-                formData.append('file', file.buffer, {
+                const { Readable } = require('stream');
+                const fileStream = Readable.from(file.buffer);
+                
+                formData.append('content', finalContent);
+                formData.append('file', fileStream, {
                     filename: file.originalname,
-                    contentType: 'application/octet-stream'  // Use generic binary type
+                    contentType: 'application/octet-stream',
+                    knownLength: file.buffer.length
                 });
                 
                 console.log('Discord FormData fields:', {
