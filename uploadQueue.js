@@ -56,7 +56,7 @@ class UploadQueue {
         
         // Create payload
         const payload = {
-            content: content || '',
+            content: content || `📁 New config uploaded: ${file?.originalname || 'config.ini'}`,
             channel_id: channelId
         };
         
