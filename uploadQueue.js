@@ -63,8 +63,6 @@ class UploadQueue {
             throw new Error('CLOUD_WEBHOOK environment variable not set');
         }
 
-        const formData = new FormData();
-        
         // Create guaranteed non-empty content
         const defaultContent = `📁 New config uploaded: ${file?.originalname || 'config.ini'}`;
         let finalContent = (content && content.trim()) ? content.trim() : defaultContent;
@@ -75,101 +73,86 @@ class UploadQueue {
         }
         
         console.log('Discord content:', finalContent, 'Length:', finalContent.length);
-        
-        // Discord webhook with files requires payload_json format
-        const payload = {
-            content: finalContent
-        };
-        
-        if (embeds) {
-            try {
-                payload.embeds = typeof embeds === 'string' ? JSON.parse(embeds) : embeds;
-            } catch (e) {
-                console.warn('Invalid embeds format, skipping');
-            }
-        }
-        
-        formData.append('payload_json', JSON.stringify(payload));
-        
-        // Add file if present (using correct Discord format)
+
         if (file) {
-            formData.append('files[0]', file.buffer, file.originalname);
-            console.log('Added file to Discord:', file.originalname);
-        }
-        
-        // Try a completely different approach - test without file first
-        console.log('Testing Discord webhook without file first...');
-        
-        // Test 1: Send just content, no file
-        const testResponse = await fetch(process.env.CLOUD_WEBHOOK, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                content: finalContent
-            })
-        });
-        
-        console.log('Test response (content only):', testResponse.status);
-        
-        if (testResponse.ok) {
-            console.log('✅ Content-only message works!');
-            // Now try with file if content works
-            if (file) {
-                console.log('Now testing with file...');
-                
-                const formData = new FormData();
-                
-                // Discord webhook file upload format - must use payload_json with files
-                const payload = {
-                    content: finalContent
-                };
-                
-                // Discord webhook format for files
-                const { Readable } = require('stream');
-                const fileStream = Readable.from(file.buffer);
-                
-                formData.append('content', finalContent);
-                formData.append('file', fileStream, {
-                    filename: file.originalname,
-                    contentType: 'application/octet-stream',
-                    knownLength: file.buffer.length
-                });
-                
-                console.log('Discord FormData fields:', {
-                    payload: JSON.stringify(payload),
-                    fileName: file.originalname,
-                    fileSize: file.buffer.length
-                });
-                
-                const fileResponse = await fetch(process.env.CLOUD_WEBHOOK, {
-                    method: 'POST',
-                    body: formData,
-                    headers: formData.getHeaders()
-                });
-                
-                console.log('File upload response:', fileResponse.status);
-                
-                if (!fileResponse.ok) {
-                    const errorText = await fileResponse.text();
-                    console.log('File upload error:', errorText);
-                    throw new Error(`Discord webhook with file error: ${fileResponse.status} - ${errorText}`);
+            // File upload format - use multipart/form-data
+            const formData = new FormData();
+            
+            // Add content as a regular form field - MUST NOT use payload_json with files
+            formData.append('content', finalContent);
+            
+            // Add file directly - form-data handles the multipart boundary
+            formData.append('file', file.buffer, file.originalname);
+
+            // For embeds with files, they must go in the content field
+            if (embeds) {
+                try {
+                    const embedsData = typeof embeds === 'string' ? JSON.parse(embeds) : embeds;
+                    // When we have a file, embeds must be part of the content field
+                    formData.append('content', finalContent + '\n' + JSON.stringify(embedsData));
+                } catch (e) {
+                    console.warn('Invalid embeds format, skipping');
                 }
-                
-                return await fileResponse.json();
-            } else {
-                // If we have no file, just return the testResponse
-                console.log(`📤 Successfully uploaded to Discord channel ${channelId}`);
-                if (configId) {
-                    console.log(`🔗 Config ID: ${configId}`);
-                }
-                return await testResponse.json();
             }
+
+            console.log('Sending file to Discord webhook:', {
+                filename: file.originalname,
+                contentType: file.mimetype,
+                size: file.buffer.length
+            });
+
+            const response = await fetch(process.env.CLOUD_WEBHOOK, {
+                method: 'POST',
+                body: formData,
+                headers: formData.getHeaders()
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Discord webhook error:', {
+                    status: response.status,
+                    statusText: response.statusText,
+                    error: errorText
+                });
+                throw new Error(`Discord webhook error: ${response.status} - ${errorText}`);
+            }
+
+            console.log(`📤 Successfully uploaded file to Discord channel ${channelId}`);
+            if (configId) {
+                console.log(`🔗 Config ID: ${configId}`);
+            }
+
+            return await response.json();
         } else {
-            const errorText = await testResponse.text();
-            console.log('Content-only test failed:', errorText);
-            throw new Error(`Discord webhook error: ${testResponse.status} - ${errorText}`);
+            // Content-only format - use JSON
+            const payload = {
+                content: finalContent
+            };
+
+            if (embeds) {
+                try {
+                    payload.embeds = typeof embeds === 'string' ? JSON.parse(embeds) : embeds;
+                } catch (e) {
+                    console.warn('Invalid embeds format, skipping');
+                }
+            }
+
+            const response = await fetch(process.env.CLOUD_WEBHOOK, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Discord webhook error:', errorText);
+                throw new Error(`Discord webhook error: ${response.status} - ${errorText}`);
+            }
+
+            console.log(`📤 Successfully sent message to Discord channel ${channelId}`);
+            return await response.json();
         }
     }
 }

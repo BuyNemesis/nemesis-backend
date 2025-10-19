@@ -1511,7 +1511,10 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
                 console.log('Uploading to storage:', { filename, size: req.file.size, mimetype: req.file.mimetype });
                 
                 const formData = new FormData();
-                formData.append('file', new Blob([fileContent]), filename);
+                formData.append('file', fileContent, {
+                    filename: filename,
+                    contentType: req.file.mimetype || 'application/octet-stream'
+                });
                 
                 console.log('Sending request to:', `${STORAGE_API}/api/upload/config`);
 
