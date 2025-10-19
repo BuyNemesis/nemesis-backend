@@ -1,142 +1,198 @@
 const express = require('express');
+const multer = require('multer');
+const ConfigStorage = require('../config-storage');
+const fs = require('fs');
+const path = require('path');
+
 const router = express.Router();
+const configStorage = new ConfigStorage();
 
-// Use built-in fetch for Node.js >=18 or node-fetch for older versions
-const fetch = globalThis.fetch || require('node-fetch');
-
-// Storage API configuration
-const STORAGE_API = process.env.STORAGE_API_URL || 'http://localhost:3001';
-
-// Helper function for storage operations with retries
-async function storageApi(method, path, body = null, retries = 3) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-    for (let i = 0; i < retries; i++) {
-        try {
-            const options = {
-                method,
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                signal: controller.signal
-            };
-            if (body) {
-                options.body = JSON.stringify(body);
-            }
-            
-            const fullUrl = `${STORAGE_API}${path}`;
-            console.log(`📡 Storage API Request: ${method} ${fullUrl}`);
-            
-            const response = await fetch(fullUrl, options);
-            clearTimeout(timeoutId);
-            
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Storage API error: ${response.status} - ${errorText}`);
-            }
-
-            const data = await response.json();
-            console.log(`✅ Storage API Success: ${method} ${path}`);
-            
-            return data;
-        } catch (error) {
-            clearTimeout(timeoutId);
-            
-            if (i === retries - 1) {
-                throw new Error('Storage API is unreachable after multiple attempts');
-            }
-            
-            await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+// Set up multer for file uploads
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+    fileFilter: (req, file, cb) => {
+        if (!file.originalname.toLowerCase().endsWith('.ini')) {
+            return cb(new Error('Only .ini files are allowed'), false);
         }
+        cb(null, true);
     }
+});
+
+// Middleware to check storage availability
+function checkStorageAvailability(req, res, next) {
+    if (!configStorage.isStorageAvailable()) {
+        return res.status(503).json({
+            error: 'Storage service unavailable',
+            message: 'Ubuntu storage server is not accessible',
+            fallback: 'Using local Discord storage only'
+        });
+    }
+    next();
 }
 
-// Storage health check
-router.get('/health', async (req, res) => {
+// Upload config to storage server
+router.post('/upload', upload.single('config'), checkStorageAvailability, async (req, res) => {
     try {
-        const response = await storageApi('GET', '/health');
-        res.json(response);
+        if (!req.file) {
+            return res.status(400).json({ error: 'No config file provided' });
+        }
+
+        const { name, description, author, tags } = req.body;
+        
+        const configData = {
+            content: req.file.buffer.toString('utf8'),
+            filename: req.file.originalname,
+            name: name || req.file.originalname.replace('.ini', ''),
+            description: description || '',
+            author: author || 'Anonymous',
+            tags: tags ? tags.split(',').map(t => t.trim()) : []
+        };
+
+        const result = await configStorage.storeConfigFromBuffer(configData);
+        
+        console.log(`✅ Config uploaded to storage: ${result.configId}`);
+        
+        res.json({
+            success: true,
+            message: 'Config uploaded successfully',
+            configId: result.configId,
+            filename: result.filename,
+            storageUrl: `${configStorage.baseUrl}/api/config/${result.configId}`,
+            metadata: result.metadata
+        });
     } catch (error) {
-        console.error('Storage health check failed:', error);
-        res.status(503).json({ 
-            error: 'Storage API unavailable', 
-            message: error.message 
+        console.error('❌ Error uploading config to storage:', error);
+        res.status(500).json({
+            error: 'Failed to upload config',
+            message: error.message,
+            fallback: 'Consider using Discord upload instead'
         });
     }
 });
 
-// Get all configs from storage
-router.get('/configs', async (req, res) => {
+// Get config by ID
+router.get('/config/:id', checkStorageAvailability, async (req, res) => {
     try {
-        const response = await storageApi('GET', '/api/configs');
-        res.json(response);
-    } catch (error) {
-        console.error('Error fetching configs from storage:', error);
-        res.status(500).json({ 
-            error: 'Failed to fetch configs from storage', 
-            message: error.message 
+        const configId = req.params.id;
+        const result = await configStorage.getConfig(configId);
+        
+        res.json({
+            success: true,
+            config: result
         });
+    } catch (error) {
+        console.error('❌ Error retrieving config:', error);
+        if (error.message.includes('404')) {
+            res.status(404).json({ error: 'Config not found' });
+        } else {
+            res.status(500).json({
+                error: 'Failed to retrieve config',
+                message: error.message
+            });
+        }
     }
 });
 
-// Get specific config by ID
-router.get('/config/:id', async (req, res) => {
+// Get config content only
+router.get('/config/:id/content', checkStorageAvailability, async (req, res) => {
     try {
-        const { id } = req.params;
-        const response = await storageApi('GET', `/api/config/${id}`);
-        res.json(response);
+        const configId = req.params.id;
+        const content = await configStorage.getConfigContent(configId);
+        
+        res.set('Content-Type', 'text/plain');
+        res.send(content);
     } catch (error) {
-        console.error(`Error fetching config ${req.params.id}:`, error);
-        res.status(500).json({ 
-            error: 'Failed to fetch config from storage', 
-            message: error.message 
-        });
+        console.error('❌ Error retrieving config content:', error);
+        if (error.message.includes('404')) {
+            res.status(404).json({ error: 'Config not found' });
+        } else {
+            res.status(500).json({
+                error: 'Failed to retrieve config content',
+                message: error.message
+            });
+        }
     }
 });
 
-// Store new config
-router.post('/store-config', async (req, res) => {
+// List all configs
+router.get('/configs', checkStorageAvailability, async (req, res) => {
     try {
-        const response = await storageApi('POST', '/api/store-config', req.body);
-        res.json(response);
+        const result = await configStorage.listConfigs();
+        
+        res.json({
+            success: true,
+            configs: result.configs,
+            total: result.total
+        });
     } catch (error) {
-        console.error('Error storing config:', error);
-        res.status(500).json({ 
-            error: 'Failed to store config', 
-            message: error.message 
+        console.error('❌ Error listing configs:', error);
+        res.status(500).json({
+            error: 'Failed to list configs',
+            message: error.message
         });
     }
 });
 
 // Search configs
-router.get('/search', async (req, res) => {
+router.get('/configs/search', checkStorageAvailability, async (req, res) => {
     try {
-        const { q } = req.query;
-        const response = await storageApi('GET', `/api/search?q=${encodeURIComponent(q)}`);
-        res.json(response);
+        const { q, author, tags } = req.query;
+        const result = await configStorage.searchConfigs({ q, author, tags });
+        
+        res.json({
+            success: true,
+            configs: result.configs,
+            total: result.total,
+            query: result.query
+        });
     } catch (error) {
-        console.error('Error searching configs:', error);
-        res.status(500).json({ 
-            error: 'Failed to search configs', 
-            message: error.message 
+        console.error('❌ Error searching configs:', error);
+        res.status(500).json({
+            error: 'Failed to search configs',
+            message: error.message
         });
     }
 });
 
 // Delete config
-router.delete('/config/:id', async (req, res) => {
+router.delete('/config/:id', checkStorageAvailability, async (req, res) => {
     try {
-        const { id } = req.params;
-        const response = await storageApi('DELETE', `/api/config/${id}`);
-        res.json(response);
-    } catch (error) {
-        console.error(`Error deleting config ${req.params.id}:`, error);
-        res.status(500).json({ 
-            error: 'Failed to delete config', 
-            message: error.message 
+        const configId = req.params.id;
+        const result = await configStorage.deleteConfig(configId);
+        
+        res.json({
+            success: true,
+            message: 'Config deleted successfully'
         });
+    } catch (error) {
+        console.error('❌ Error deleting config:', error);
+        if (error.message.includes('404')) {
+            res.status(404).json({ error: 'Config not found' });
+        } else {
+            res.status(500).json({
+                error: 'Failed to delete config',
+                message: error.message
+            });
+        }
     }
+});
+
+// Storage status endpoint
+router.get('/status', (req, res) => {
+    const status = configStorage.getStatus();
+    res.json({
+        storage: status,
+        endpoints: {
+            upload: '/api/storage/upload',
+            getConfig: '/api/storage/config/:id',
+            getContent: '/api/storage/config/:id/content',
+            listConfigs: '/api/storage/configs',
+            searchConfigs: '/api/storage/configs/search',
+            deleteConfig: '/api/storage/config/:id',
+            status: '/api/storage/status'
+        }
+    });
 });
 
 module.exports = router;

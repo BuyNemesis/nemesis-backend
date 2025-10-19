@@ -1,17 +1,8 @@
-const express = require('express');
-const router = express.Router();
 const FormData = require('form-data');
-const uploadQueue = require('./uploadQueue');
-const multer = require('multer');
-
-// Set up multer for file uploads
-const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
-});
+const uploadQueue = require('../uploadQueue');
 
 // Secure webhook proxy endpoint with file support
-router.post('/api/service/upload', upload.single('file'), async (req, res) => {
+app.post('/api/service/upload', upload.single('file'), async (req, res) => {
     try {
         if (!process.env.CLOUD_WEBHOOK) {
             return res.status(500).json({ error: 'Webhook not configured' });
@@ -51,7 +42,7 @@ router.post('/api/service/upload', upload.single('file'), async (req, res) => {
             file: req.file,
             content: req.body?.content,
             embeds: req.body?.embeds,
-            channelId: process.env.CONFIGS_CHANNEL_ID2 || '1426403948281200650'
+            channelId: CONFIGS_CHANNEL_ID2
         });
 
         return res.json({ 
@@ -64,9 +55,7 @@ router.post('/api/service/upload', upload.single('file'), async (req, res) => {
         console.error('Error queueing config upload:', error);
         return res.status(500).json({ 
             error: 'Failed to queue config upload',
-            message: error.message 
+            message: error.message
         });
     }
 });
-
-module.exports = router;
