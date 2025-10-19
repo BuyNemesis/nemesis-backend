@@ -3,7 +3,6 @@ require('dotenv').config();
 
 const fs = require('fs');
 const path = require('path');
-const { Readable } = require('stream');
 
 // Use built-in fetch for Node.js >=18 or node-fetch for older versions
 const fetch = globalThis.fetch || require('node-fetch');
@@ -130,40 +129,8 @@ const cors = require('cors');
 const multer = require('multer');
 const FormData = require('form-data');
 
-// Helper function to provide specific guidance based on error status
-function getStorageErrorHelp(status, errorText) {
-    switch (status) {
-        case 400:
-            return 'The request was malformed. Check file format and form field names.';
-        case 401:
-            return 'Authentication failed. Verify API credentials are set correctly.';
-        case 403:
-            return 'Permission denied. Check if the storage server is allowing uploads.';
-        case 404:
-            return 'Upload endpoint not found. Verify storage API URL is correct.';
-        case 413:
-            return 'File too large for storage server. Check server file size limits.';
-        case 415:
-            return 'File type not supported. Ensure file is a valid .ini config.';
-        case 500:
-            if (errorText.includes('disk')) {
-                return 'Storage server disk error. Check server disk space and permissions.';
-            }
-            if (errorText.includes('multer')) {
-                return 'File upload handling failed. Verify multipart/form-data format.';
-            }
-            return 'Internal server error. Check storage server logs for details.';
-        case 502:
-            return 'Storage server unavailable. Check if storage service is running.';
-        case 504:
-            return 'Storage server timeout. Check server load and network connectivity.';
-        default:
-            return 'Unknown error. Check both client and server logs for details.';
-    }
-}
-
 // Import storage routes
-const storageRoutes = require('./storage');
+const storageRoutes = require('./routes/storage');
 
 // Set up multer for file uploads
 const upload = multer({
@@ -621,8 +588,8 @@ let featureMediaCache = {
     updating: false
 };
 
-// Refresh interval in milliseconds (5 minutes)
-const FEATURE_MEDIA_CACHE_REFRESH_INTERVAL = 5 * 60 * 1000;
+// Refresh interval in milliseconds (30 seconds)
+const FEATURE_MEDIA_CACHE_REFRESH_INTERVAL = 30 * 1000;
 
 // Function to refresh feature media cache
 async function refreshFeatureMediaCache() {
@@ -971,8 +938,8 @@ let configsCache = {
     updating: false
 };
 
-// Refresh interval in milliseconds (5 minutes)
-const CONFIG_CACHE_REFRESH_INTERVAL = 5 * 60 * 1000;
+// Refresh interval in milliseconds (30 seconds)
+const CONFIG_CACHE_REFRESH_INTERVAL = 30 * 1000;
 
 // Function to refresh configs cache
 async function refreshConfigsCache() {
@@ -1412,275 +1379,85 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
             return res.status(500).json({ error: 'Webhook not configured' });
         }
 
-        // Validate request with detailed error messages
-        if (!req.file) {
-            return res.status(400).json({
-                error: 'No file provided',
-                details: {
-                    receivedFields: Object.keys(req.body || {}),
-                    contentPresent: !!req.body?.content,
-                    embedsPresent: !!req.body?.embeds,
-                    help: 'Request must include a file in multipart/form-data with field name "file"'
-                }
-            });
-        }
-
-        // Validate file type
-        if (!req.file.originalname.toLowerCase().endsWith('.ini')) {
-            return res.status(400).json({
-                error: 'Invalid file type',
-                details: {
-                    filename: req.file.originalname,
-                    receivedType: req.file.mimetype,
-                    fileExtension: path.extname(req.file.originalname),
-                    help: 'Only .ini configuration files are allowed'
-                }
-            });
-        }
-
-        // Check file size with detailed info
-        if (req.file.size > 1024 * 1024) {
-            return res.status(400).json({
-                error: 'File size exceeds limit',
-                details: {
-                    filename: req.file.originalname,
-                    receivedSize: req.file.size,
-                    maxSize: 1024 * 1024,
-                    exceedsByBytes: req.file.size - (1024 * 1024),
-                    help: 'Files must be smaller than 1MB (1,048,576 bytes)'
-                }
-            });
-        }
-
-        // Validate content length
-        if (req.body?.content && req.body.content.length > 2000) {
-            return res.status(400).json({
-                error: 'Content exceeds Discord character limit',
-                details: {
-                    receivedLength: req.body.content.length,
-                    maxLength: 2000,
-                    exceedsByChars: req.body.content.length - 2000,
-                    help: 'Message content must be 2000 characters or less per Discord limits'
-                }
-            });
-        }
-
-        // Validate embeds format
-        if (req.body?.embeds) {
-            try {
-                const embeds = JSON.parse(req.body.embeds);
-                if (!Array.isArray(embeds)) {
-                    return res.status(400).json({
-                        error: 'Invalid embeds format',
-                        details: {
-                            received: typeof embeds,
-                            expected: 'array',
-                            help: 'Embeds must be a JSON array'
-                        }
-                    });
-                }
-                if (embeds.length > 1) {
-                    return res.status(400).json({
-                        error: 'Too many embeds',
-                        details: {
-                            receivedCount: embeds.length,
-                            maxAllowed: 1,
-                            help: 'Only one embed per message is supported'
-                        }
-                    });
-                }
-            } catch (e) {
-                return res.status(400).json({
-                    error: 'Invalid embeds JSON',
-                    details: {
-                        parseError: e.message,
-                        received: req.body.embeds,
-                        help: 'Embeds must be valid JSON array string'
-                    }
-                });
+        // Validate request
+        if (req.file) {
+            // Only allow .ini files
+            if (!req.file.originalname.toLowerCase().endsWith('.ini')) {
+                return res.status(400).json({ error: 'Only .ini files are allowed' });
+            }
+            // Check file size (max 1MB)
+            if (req.file.size > 1024 * 1024) {
+                return res.status(400).json({ error: 'File too large' });
             }
         }
 
-        // First upload file to storage API, then queue for Discord
-        if (req.file) {
-            const fileContent = req.file.buffer;
-            const filename = req.file.originalname;
-            const configId = Date.now().toString();
-
-            try {
-                console.log('Uploading to storage:', { filename, size: req.file.size, mimetype: req.file.mimetype });
-                
-                const boundary = '------------------------' + Date.now().toString(16);
-                const parts = [];
-
-                // Add file field
-                parts.push(Buffer.from(
-                    '--' + boundary + '\r\n' +
-                    `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
-                    'Content-Type: application/octet-stream\r\n' +
-                    '\r\n'
-                ));
-
-                // Add file content
-                parts.push(fileContent);
-                parts.push(Buffer.from('\r\n--' + boundary + '--\r\n'));
-
-                // Concatenate all parts into a single buffer
-                const body = Buffer.concat(parts);
-                
-                console.log('Sending request to:', `${STORAGE_API}/api/upload/config`);
-
-                // Log detailed request info for debugging
-                console.log('Upload request details:', {
-                    url: `${STORAGE_API}/api/upload/config`,
-                    filename,
-                    fileSize: fileContent.length,
-                    headers: {
-                        'Content-Type': `multipart/form-data; boundary=${boundary}`,
-                        'Content-Length': body.length.toString()
-                    }
-                });
-
-                // Detailed pre-flight request logging
-                const requestInfo = {
-                    url: `${STORAGE_API}/api/upload/config`,
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': `multipart/form-data; boundary=${boundary}`,
-                        'Content-Length': body.length.toString()
-                    },
-                    fileDetails: {
-                        name: filename,
-                        size: fileContent.length,
-                        type: 'application/octet-stream',
-                        firstBytes: fileContent.slice(0, 20).toString('hex')
-                    }
-                };
-                console.log('Storage upload request:', JSON.stringify(requestInfo, null, 2));
-
-                let uploadResponse;
+        // Validate content and embeds
+        if (req.body) {
+            if (req.body.content && req.body.content.length > 2000) {
+                return res.status(400).json({ error: 'Content too long' });
+            }
+            if (req.body.embeds) {
                 try {
-                    uploadResponse = await fetch(`${STORAGE_API}/api/upload/config`, {
-                        method: 'POST',
-                        method: 'POST',
-                        body: body,
-                        headers: {
-                            'Content-Type': `multipart/form-data; boundary=${boundary}`,
-                            'Content-Length': body.length.toString()
-                        }
-                    });
-                } catch (networkError) {
-                    // Handle network-level errors
-                    throw new Error(JSON.stringify({
-                        phase: 'network',
-                        error: 'Network request failed',
-                        details: {
-                            message: networkError.message,
-                            code: networkError.code,
-                            type: networkError.type,
-                            url: `${STORAGE_API}/api/upload/config`,
-                            help: 'Check network connectivity and storage server status'
-                        }
-                    }));
-                }
-                
-                // Detailed response logging
-                const responseInfo = {
-                    status: uploadResponse.status,
-                    statusText: uploadResponse.statusText,
-                    headers: Object.fromEntries(uploadResponse.headers.entries()),
-                    size: uploadResponse.headers.get('content-length'),
-                    type: uploadResponse.headers.get('content-type')
-                };
-                console.log('Storage response:', JSON.stringify(responseInfo, null, 2));
-                
-                if (!uploadResponse.ok) {
-                    let errorText;
-                    try {
-                        errorText = await uploadResponse.text();
-                    } catch (e) {
-                        errorText = 'Failed to read error response body';
+                    const embeds = JSON.parse(req.body.embeds);
+                    if (!Array.isArray(embeds) || embeds.length > 1) {
+                        return res.status(400).json({ error: 'Invalid embeds format' });
                     }
-
-                    // Throw comprehensive error object
-                    throw new Error(JSON.stringify({
-                        phase: 'storage_api',
-                        error: 'Storage upload failed',
-                        details: {
-                            status: uploadResponse.status,
-                            statusText: uploadResponse.statusText,
-                            headers: Object.fromEntries(uploadResponse.headers.entries()),
-                            response: errorText,
-                            request: {
-                                url: `${STORAGE_API}/api/upload/config`,
-                                file: {
-                                    name: filename,
-                                    size: fileContent.length
-                                }
-                            },
-                            help: getStorageErrorHelp(uploadResponse.status, errorText)
-                        }
-                    }));
+                } catch (e) {
+                    return res.status(400).json({ error: 'Invalid embeds format' });
                 }
+            }
+        }
 
-                const storageResult = await uploadResponse.json();
-                console.log('Storage upload result:', storageResult);
+        // First upload file to storage API
+        if (req.file) {
+            try {
+                const fileContent = req.file.buffer;
+                const filename = req.file.originalname;
+                const configId = Date.now().toString();
+
+                const formData = new FormData();
+                formData.append('file', new Blob([fileContent]), {
+                    filename: filename,
+                    contentType: 'application/octet-stream',
+                    knownLength: fileContent.length
+                });
+                await storageApi('POST', '/api/upload/config', formData);
 
                 console.log(`📤 Uploaded config ${filename} to storage API with ID: ${configId}`);
 
-                // Cache the uploaded config and verify it was saved
+                // Cache the uploaded config
                 memoryCache.configs.set(configId, fileContent);
-                const cached = memoryCache.configs.get(configId);
-                console.log('Cache verification:', {
-                    configId,
-                    cached: cached ? 'present' : 'missing',
-                    size: cached ? cached.length : 0,
-                    matches: cached && Buffer.compare(cached, fileContent) === 0 ? 'yes' : 'no'
+
+                // Then add to Discord upload queue
+                await uploadQueue.add({
+                    file: req.file,
+                    content: req.body?.content,
+                    embeds: req.body?.embeds,
+                    channelId: CONFIGS_CHANNEL_ID2,
+                    configId: configId
                 });
 
-                // The storage server will handle Discord upload
                 return res.json({ 
                     success: true, 
-                    message: 'Config uploaded to storage server',
+                    message: 'Config uploaded to storage and queued for Discord',
                     configId: configId,
-                    timestamp: new Date().toISOString() 
+                    queueTime: new Date().toISOString() 
                 });
             } catch (storageError) {
-                // Parse detailed error info if available
-                let errorDetails;
-                try {
-                    errorDetails = JSON.parse(storageError.message);
-                } catch (e) {
-                    errorDetails = {
-                        phase: 'unknown',
-                        error: storageError.message,
-                        details: {
-                            stack: storageError.stack
-                        }
-                    };
-                }
-
-                console.error('Storage upload failed:', {
-                    timestamp: new Date().toISOString(),
-                    file: {
-                        name: req.file.originalname,
-                        size: req.file.size,
-                        type: req.file.mimetype
-                    },
-                    error: errorDetails,
-                    environment: {
-                        node: process.version,
-                        platform: process.platform,
-                        storageAPI: STORAGE_API
-                    }
+                console.error('Error uploading to storage API:', storageError);
+                // Fall back to just Discord upload
+                await uploadQueue.add({
+                    file: req.file,
+                    content: req.body?.content,
+                    embeds: req.body?.embeds,
+                    channelId: CONFIGS_CHANNEL_ID2
                 });
 
-                // If storage server is down, we can't proceed
-                return res.status(503).json({ 
-                    success: false, 
-                    message: 'Storage server unavailable, please try again later', 
-                    timestamp: new Date().toISOString(),
-                    error: errorDetails
+                return res.json({ 
+                    success: true, 
+                    message: 'Config queued for Discord upload (storage API unavailable)', 
+                    queueTime: new Date().toISOString(),
+                    fallback: true
                 });
             }
         }
