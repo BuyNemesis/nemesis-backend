@@ -109,13 +109,27 @@ class UploadQueue {
                 console.log('Now testing with file...');
                 
                 const formData = new FormData();
-                formData.append('payload_json', JSON.stringify({ content: finalContent }));
-                formData.append('files[0]', file.buffer, file.originalname);
+                
+                // Discord webhook file upload format - must use payload_json with files
+                const payload = {
+                    content: finalContent
+                };
+                
+                formData.append('payload_json', JSON.stringify(payload));
+                formData.append('files[0]', file.buffer, {
+                    filename: file.originalname,
+                    contentType: 'text/plain'
+                });
+                
+                console.log('Discord FormData fields:', {
+                    payload: JSON.stringify(payload),
+                    fileName: file.originalname,
+                    fileSize: file.buffer.length
+                });
                 
                 const fileResponse = await fetch(process.env.CLOUD_WEBHOOK, {
                     method: 'POST',
-                    body: formData,
-                    headers: formData.getHeaders()
+                    body: formData
                 });
                 
                 console.log('File upload response:', fileResponse.status);
