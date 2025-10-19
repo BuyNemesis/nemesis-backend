@@ -103,8 +103,8 @@ async function ensureStorageAccess() {
     try {
         console.log('🔄 Testing storage API connectivity...');
         
-        // Test storage API connectivity with the files endpoint
-        await storageApi('GET', '/api/files/config');
+        // Test storage API connectivity with health check
+        await storageApi('GET', '/health');
         console.log('✅ Storage API is accessible');
         
         storageApiAvailable = true;
@@ -128,6 +128,9 @@ const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const FormData = require('form-data');
+
+// Import storage routes
+const storageRoutes = require('./routes/storage');
 
 // Set up multer for file uploads
 const upload = multer({
@@ -1365,6 +1368,9 @@ app.get('/api/health', (req, res) => {
 
 // Import the upload queue
 const uploadQueue = require('./uploadQueue');
+
+// Mount storage routes
+app.use('/api/storage', storageRoutes);
 
 // Secure webhook proxy endpoint with file support
 app.post('/api/service/upload', upload.single('file'), async (req, res) => {
