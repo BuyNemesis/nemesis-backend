@@ -54,10 +54,9 @@ class UploadQueue {
             formData.append('files[0]', file.buffer, file.originalname);
         }
         
-        // Create payload
+        // Create payload (webhooks don't need channel_id)
         const payload = {
-            content: content || `📁 New config uploaded: ${file?.originalname || 'config.ini'}`,
-            channel_id: channelId
+            content: content || `📁 New config uploaded: ${file?.originalname || 'config.ini'}`
         };
         
         if (embeds) {
