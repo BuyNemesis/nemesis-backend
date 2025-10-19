@@ -79,13 +79,35 @@ class UploadQueue {
             // Manually construct multipart form-data
             const parts = [];
 
-            // Add content field
+            // Construct the message content with file details
+            const messageContent = `${finalContent}\n📎 File: \`${file.originalname}\`${configId ? `\n🔗 Config ID: ${configId}` : ''}`;
+
+            // Add content field with file details
             parts.push(Buffer.from(
                 '--' + boundary + '\r\n' +
                 'Content-Disposition: form-data; name="content"\r\n' +
                 '\r\n' +
-                finalContent + '\r\n'
+                messageContent + '\r\n'
             ));
+
+            // Add payload_json field for embeds if present
+            if (embeds) {
+                try {
+                    const embedsData = typeof embeds === 'string' ? JSON.parse(embeds) : embeds;
+                    const payload = {
+                        embeds: embedsData
+                    };
+                    parts.push(Buffer.from(
+                        '--' + boundary + '\r\n' +
+                        'Content-Disposition: form-data; name="payload_json"\r\n' +
+                        'Content-Type: application/json\r\n' +
+                        '\r\n' +
+                        JSON.stringify(payload) + '\r\n'
+                    ));
+                } catch (e) {
+                    console.warn('Invalid embeds format, skipping');
+                }
+            }
 
             // Add file field
             parts.push(Buffer.from(
@@ -98,21 +120,6 @@ class UploadQueue {
             // Add file content
             parts.push(file.buffer);
             parts.push(Buffer.from('\r\n'));
-
-            // Add embeds if present
-            if (embeds) {
-                try {
-                    const embedsData = typeof embeds === 'string' ? JSON.parse(embeds) : embeds;
-                    parts.push(Buffer.from(
-                        '--' + boundary + '\r\n' +
-                        'Content-Disposition: form-data; name="embeds"\r\n' +
-                        '\r\n' +
-                        JSON.stringify(embedsData) + '\r\n'
-                    ));
-                } catch (e) {
-                    console.warn('Invalid embeds format, skipping');
-                }
-            }
 
             // Add final boundary
             parts.push(Buffer.from('--' + boundary + '--\r\n'));
