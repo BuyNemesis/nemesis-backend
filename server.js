@@ -11,6 +11,7 @@ const fetch = globalThis.fetch || require('node-fetch');
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
+const FormData = require('form-data');
 
 // Storage API configuration
 const STORAGE_API = process.env.STORAGE_API_URL || 'http://localhost:3001';
@@ -39,14 +40,10 @@ async function storageApi(method, path, body = null, retries = 3) {
                 signal: controller.signal
             };
 
-            // Handle body types
-            if (typeof body === 'string' && body.startsWith('--')) {
-                // Manual multipart data
+            // Handle FormData vs JSON
+            if (body instanceof FormData) {
                 options.body = body;
-                const boundaryMatch = body.match(/^--([^\r\n]+)/m);
-                if (boundaryMatch) {
-                    options.headers['Content-Type'] = `multipart/form-data; boundary=${boundaryMatch[1]}`;
-                }
+                // Let fetch automatically set the Content-Type header for FormData
             } else if (body) {
                 options.headers['Content-Type'] = 'application/json';
                 options.body = JSON.stringify(body);
@@ -110,6 +107,16 @@ const memoryCache = {
         featureMedia: 0
     }
 };
+
+// In-memory cache for offsets
+let offsetsCache = {
+    data: '',
+    lastUpdated: 0,
+    updating: false
+};
+
+// Refresh interval in milliseconds (1 minute)
+const OFFSETS_CACHE_REFRESH_INTERVAL = 60 * 1000;
 
 // Helper function to ensure storage API is accessible
 async function ensureStorageAccess() {
@@ -187,6 +194,7 @@ const CONFIGS_CHANNEL_ID = process.env.CONFIGS_CHANNEL_ID;
 const CONFIGS_CHANNEL_ID2 = process.env.CONFIGS_CHANNEL_ID2 || '1426403948281200650';
 const BUYER_MEDIA_CHANNEL_ID = process.env.BUYER_MEDIA_CHANNEL_ID || '1426388792012705874';
 const STATUS_CHANNEL_ID = process.env.STATUS_CHANNEL_ID || '1426384774167269502';
+const OFFSETS_CHANNEL_ID = process.env.OFFSETS_CHANNEL_ID || '1429724900423237754';
 
 // Endpoint to get live status from Discord channel
 app.get('/api/live-status', async (req, res) => {
@@ -664,6 +672,78 @@ async function refreshFeatureMediaCache() {
 // Setup periodic cache refresh
 setInterval(refreshFeatureMediaCache, FEATURE_MEDIA_CACHE_REFRESH_INTERVAL);
 
+// Function to refresh offsets cache
+async function refreshOffsetsCache() {
+    if (offsetsCache.updating) return;
+    offsetsCache.updating = true;
+
+    try {
+        const response = await fetch(`https://discord.com/api/v10/channels/${OFFSETS_CHANNEL_ID}/messages?limit=1`, {
+            headers: {
+                'Authorization': `Bot ${BOT_TOKEN}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Discord API error: ${response.status}`);
+        }
+
+        const messages = await response.json();
+
+        if (!messages || messages.length === 0) {
+            throw new Error('No messages found in offsets channel');
+        }
+
+        const message = messages[0];
+
+        if (!message.attachments || message.attachments.length === 0) {
+            throw new Error('No attachments found in the message');
+        }
+
+        const attachment = message.attachments[0];
+
+        const fileResponse = await fetch(attachment.url);
+
+        if (!fileResponse.ok) {
+            throw new Error(`Failed to fetch file: ${fileResponse.status}`);
+        }
+
+        let content = await fileResponse.text();
+
+        // Remove the header and footer
+        const startMarker = 'namespace offsets {';
+        const endMarker = '}';
+
+        const startIndex = content.indexOf(startMarker);
+        if (startIndex === -1) {
+            throw new Error('Could not find namespace offsets start');
+        }
+
+        const contentStart = startIndex + startMarker.length;
+
+        const endIndex = content.lastIndexOf(endMarker);
+        if (endIndex === -1) {
+            throw new Error('Could not find namespace end');
+        }
+
+        const cleanedContent = content.substring(contentStart, endIndex).trim();
+
+        // Update cache
+        offsetsCache.data = cleanedContent;
+        offsetsCache.lastUpdated = Date.now();
+        offsetsCache.updating = false;
+
+        console.log('✅ Offsets cache refreshed');
+    } catch (error) {
+        console.error('Error refreshing offsets cache:', error);
+        offsetsCache.updating = false;
+    }
+}
+
+// Setup periodic offsets cache refresh
+setInterval(refreshOffsetsCache, OFFSETS_CACHE_REFRESH_INTERVAL);
+
 // Feature videos endpoint - now with caching
 app.get('/api/feature-videos', async (req, res) => {
     try {
@@ -768,6 +848,24 @@ app.get('/api/patchnotes', async (req, res) => {
     } catch (error) {
         console.error('Error in /api/patchnotes:', error);
         res.status(500).json({ error: 'Failed to fetch patchnotes', message: error.message });
+    }
+});
+
+// Offsets endpoint - fetch and serve cleaned offsets data
+app.get('/api/offsets', async (req, res) => {
+    try {
+        // Check if cache needs refresh
+        const now = Date.now();
+        if (now - offsetsCache.lastUpdated > OFFSETS_CACHE_REFRESH_INTERVAL) {
+            await refreshOffsetsCache();
+        }
+
+        // Serve cached data
+        res.set('Content-Type', 'text/plain');
+        res.send(offsetsCache.data);
+    } catch (error) {
+        console.error('Error serving offsets:', error);
+        res.status(500).json({ error: 'Failed to fetch offsets', message: error.message });
     }
 });
 
@@ -1135,6 +1233,9 @@ async function initializeCache() {
                 // Initialize feature media cache
                 await refreshFeatureMediaCache();
                 
+                // Initialize offsets cache
+                await refreshOffsetsCache();
+                
                 console.log('✅ All caches initialized successfully');
             } catch (error) {
                 console.error('❌ Error during background cache initialization:', error);
@@ -1363,13 +1464,15 @@ app.get('/api/health', (req, res) => {
             '/api/reviews': 'Active',
             '/api/media': 'Active',
             '/api/feature-videos': 'Active',
-            '/api/config-content': 'Active'
+            '/api/config-content': 'Active',
+            '/api/offsets': 'Active'
         },
         bot_token: !!BOT_TOKEN,
         guild_id: process.env.GUILD_ID || '1426384773131010070',
         configs_channel_id: CONFIGS_CHANNEL_ID,
         buyer_media_channel_id: BUYER_MEDIA_CHANNEL_ID,
         feature_videos_channel_id: process.env.SITE_RELATED_MEDIA || '1427220027232485447',
+        offsets_channel_id: OFFSETS_CHANNEL_ID,
         timestamp: new Date().toISOString()
     });
 });
@@ -1423,15 +1526,13 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
                 const filename = req.file.originalname;
                 const configId = Date.now().toString();
 
-                // Construct multipart data manually
-                const boundary = '----FormBoundary' + Date.now();
-                let requestBody = `--${boundary}\r\n`;
-                requestBody += `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n`;
-                requestBody += `Content-Type: ${filename.toLowerCase().endsWith('.ini') ? 'text/plain' : 'application/octet-stream'}\r\n\r\n`;
-                requestBody += fileContent.toString('binary');
-                requestBody += `\r\n--${boundary}--\r\n`;
-
-                await storageApi('POST', '/api/upload/config', requestBody);
+                const formData = new FormData();
+                formData.append('file', fileContent, {
+                    filename: filename,
+                    contentType: filename.toLowerCase().endsWith('.ini') ? 'text/plain' : 'application/octet-stream',
+                    knownLength: fileContent.length
+                });
+                await storageApi('POST', '/api/upload/config', formData);
 
                 console.log(`📤 Uploaded config ${filename} to storage API with ID: ${configId}`);
 
@@ -1513,11 +1614,13 @@ const server = app.listen(PORT, () => {
     console.log(`📝 Reviews Channel ID: ${REVIEWS_CHANNEL_ID}`);
     console.log(`🎬 Buyer Media Channel ID: ${BUYER_MEDIA_CHANNEL_ID}`);
     console.log(`📋 Configs Channel ID: ${CONFIGS_CHANNEL_ID}`);
-    console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+    console.log(`� Offsets Channel ID: ${OFFSETS_CHANNEL_ID}`);
+    console.log(`�🔗 Health check: http://localhost:${PORT}/health`);
     console.log(`📝 Reviews endpoint: http://localhost:${PORT}/api/reviews`);
     console.log(`🎥 Media endpoint: http://localhost:${PORT}/api/media`);
     console.log(`📁 Configs endpoint: http://localhost:${PORT}/api/configs`);
     console.log(`📦 Config content endpoint: http://localhost:${PORT}/api/config-content`);
+    console.log(`📊 Offsets endpoint: http://localhost:${PORT}/api/offsets`);
     console.log(`🌐 Website: http://localhost:${PORT}/`);
     console.log('🔒 Bot token loaded securely from environment variables');
 });
@@ -1529,6 +1632,8 @@ function shutdown(signal) {
     // Clear memory caches
     memoryCache.configs.clear();
     memoryCache.featureMedia.clear();
+    offsetsCache.data = '';
+    offsetsCache.lastUpdated = 0;
     
     // Close server
     server.close(() => {
