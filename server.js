@@ -727,7 +727,7 @@ async function refreshOffsetsCache() {
             throw new Error('Could not find namespace end');
         }
 
-        const cleanedContent = content.substring(contentStart, endIndex).trim();
+        const cleanedContent = content.substring(contentStart, endIndex).replace(/\s+$/, '');
 
         // Update cache
         offsetsCache.data = cleanedContent;
