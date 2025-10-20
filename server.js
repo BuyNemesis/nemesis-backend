@@ -4,8 +4,8 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 
-// Use built-in fetch (Node.js >=18)
-const fetch = globalThis.fetch;
+// Use built-in fetch for Node.js >=18 or node-fetch for older versions
+const fetch = globalThis.fetch || require('node-fetch');
 
 // Import required packages
 const express = require('express');

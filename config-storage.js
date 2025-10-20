@@ -1,7 +1,7 @@
 // Config Storage Integration for Windows Backend
 // Connects to Ubuntu Storage Server for config management
 
-const fetch = globalThis.fetch;
+const fetch = require('node-fetch');
 const FormData = require('form-data');
 const fs = require('fs');
 

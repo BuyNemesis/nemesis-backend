@@ -1,4 +1,4 @@
-const fetch = globalThis.fetch;
+const fetch = require('node-fetch');
 const FormData = require('form-data');
 const { Blob } = require('buffer');
 
