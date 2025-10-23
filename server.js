@@ -40,10 +40,12 @@ async function storageApi(method, path, body = null, retries = 3) {
                 signal: controller.signal
             };
 
-            // Handle FormData vs JSON
-            if (body instanceof FormData) {
+            // Handle different body types
+            if (Buffer.isBuffer(body)) {
+                // Handle manually constructed multipart form-data
+                const boundary = body.toString('utf8', 0, body.indexOf('\r\n')).trim();
                 options.body = body;
-                // Let fetch automatically set the Content-Type header for FormData
+                options.headers['Content-Type'] = `multipart/form-data; boundary=${boundary.substring(2)}`;
             } else if (body) {
                 options.headers['Content-Type'] = 'application/json';
                 options.body = JSON.stringify(body);
@@ -1530,13 +1532,20 @@ app.post('/api/service/upload', upload.single('file'), async (req, res) => {
                 const filename = req.file.originalname;
                 const configId = Date.now().toString();
 
-                const formData = new FormData();
-                formData.append('file', fileContent, {
-                    filename: filename,
-                    contentType: filename.toLowerCase().endsWith('.ini') ? 'text/plain' : 'application/octet-stream',
-                    knownLength: fileContent.length
-                });
-                await storageApi('POST', '/api/upload/config', formData);
+                // Construct multipart form-data manually
+                const boundary = `----WebKitFormBoundary${Math.random().toString(36).slice(2)}`;
+                let body = `--${boundary}\r\n`;
+                body += `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n`;
+                body += `Content-Type: ${filename.toLowerCase().endsWith('.ini') ? 'text/plain' : 'application/octet-stream'}\r\n\r\n`;
+                
+                // Combine the body prefix with file content and boundary suffix
+                const requestBody = Buffer.concat([
+                    Buffer.from(body, 'utf8'),
+                    fileContent,
+                    Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8')
+                ]);
+
+                await storageApi('POST', '/api/upload/config', requestBody);
 
                 console.log(`📤 Uploaded config ${filename} to storage API with ID: ${configId}`);
 
