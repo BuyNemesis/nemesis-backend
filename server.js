@@ -1428,7 +1428,8 @@ app.get('/api/treegarden/autumn/leaves', async (req, res) => {
         res.set('Access-Control-Allow-Methods', 'GET');
         res.set('Access-Control-Allow-Headers', 'Content-Type');
         
-        const resourceUrl = process.env.TREEGARDEN_URL;
+        // Direct URL to the hitbox sound file
+        const resourceUrl = 'https://cdn.discordapp.com/attachments/1426384776108093502/1166339087400198164/hitsound.rar';
         if (!resourceUrl) {
             return res.status(404).send('Resource not found');
         }
@@ -1444,13 +1445,16 @@ app.get('/api/treegarden/autumn/leaves', async (req, res) => {
         
         // Stream the response
         const buffer = await response.buffer();
+        
+        // Set additional headers for better download experience
+        res.set('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
+        res.set('Content-Length', buffer.length);
+        
         res.send(buffer);
     } catch (error) {
-        console.error('Error serving resource:', error);
-        res.status(500).json({ 
-            error: 'Internal server error',
-            message: error.message 
-        });
+        console.error('Error serving hitbox sound:', error);
+        // Send a user-friendly error
+        res.status(503).send('Resource temporarily unavailable. Please try again later.');
     }
 });
 
