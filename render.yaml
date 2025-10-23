@@ -1,14 +1,28 @@
 services:
   - type: web
-    name: nemesis-storage-api
+    name: nemesis-backend
     env: node
     buildCommand: npm install
-    startCommand: node storage-server.js
+    startCommand: mkdir -p storage/media storage/config && node server.js
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 3001
+      - key: TREEGARDEN_URL
+        value: "https://cdn.discordapp.com/attachments/1426384776108093502/1166339087400198164/hitsound.rar"
+      - key: BOT_TOKEN
+        sync: false
+      - key: GUILD_ID
+        value: "1426384773131010070"
+      - key: REVIEWS_CHANNEL_ID
+        value: "1426388568632328333"
+      - key: CONFIGS_CHANNEL_ID
+        value: "1426403948281200650"
+      - key: CONFIGS_CHANNEL_ID2
+        value: "1426403948281200650"
+      - key: BUYER_MEDIA_CHANNEL_ID
+        value: "1426388792012705874"
+      - key: STATUS_CHANNEL_ID
+        value: "1426384774167269502"
+      - key: OFFSETS_CHANNEL_ID
+        value: "1429724900423237754"
     rootDirectory: .
-    # Config storage API server
-    # Will create directories automatically on startup
